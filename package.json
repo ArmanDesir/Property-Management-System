@@ -18,6 +18,7 @@
     "test:db": "npm run test:db --workspace server"
   },
   "devDependencies": {
-    "concurrently": "^9.1.2"
+    "concurrently": "^9.1.2",
+    "drizzle-orm": "^0.45.4"
   }
 }
