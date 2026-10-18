@@ -11,11 +11,37 @@ import {
 export const properties = sqliteTable("properties", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   name: text("name").notNull(),
+  propertyType: text("property_type", {
+    enum: ["hotel", "resort", "hostel", "apartment", "vacation_rental", "other"],
+  }).notNull().default("other"),
   address: text("address"),
+  contactName: text("contact_name"),
+  contactEmail: text("contact_email"),
+  contactPhone: text("contact_phone"),
+  defaultCurrency: text("default_currency").notNull().default("USD"),
+  defaultCheckInTime: text("default_check_in_time").notNull().default("15:00"),
+  defaultCheckOutTime: text("default_check_out_time").notNull().default("11:00"),
+  status: text("status", { enum: ["active", "archived"] }).notNull().default("active"),
   timezone: text("timezone").notNull().default("UTC"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
-});
+}, (table) => [
+  check(
+    "properties_type_check",
+    sql`${table.propertyType} IN ('hotel', 'resort', 'hostel', 'apartment', 'vacation_rental', 'other')`,
+  ),
+  check("properties_status_check", sql`${table.status} IN ('active', 'archived')`),
+  check("properties_currency_check", sql`length(${table.defaultCurrency}) = 3`),
+  check(
+    "properties_check_in_time_check",
+    sql`${table.defaultCheckInTime} GLOB '[0-2][0-9]:[0-5][0-9]'`,
+  ),
+  check(
+    "properties_check_out_time_check",
+    sql`${table.defaultCheckOutTime} GLOB '[0-2][0-9]:[0-5][0-9]'`,
+  ),
+],
+);
 
 export const guests = sqliteTable(
   "guests",
@@ -121,5 +147,48 @@ export const housekeepingTasks = sqliteTable(
       sql`${table.status} IN ('pending', 'in_progress', 'complete', 'cancelled')`,
     ),
     index("housekeeping_property_status").on(table.propertyId, table.status),
+  ],
+);
+
+export const units = sqliteTable(
+  "units",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    propertyId: integer("property_id")
+      .notNull()
+      .references(() => properties.id, { onDelete: "restrict" }),
+    name: text("name").notNull(),
+    unitType: text("unit_type", {
+      enum: ["room", "apartment", "villa", "dormitory_room", "studio", "suite", "other"],
+    }).notNull().default("room"),
+    description: text("description"),
+    capacity: integer("capacity").notNull(),
+    baseNightlyRateCents: integer("base_nightly_rate_cents").notNull(),
+    status: text("status", {
+      enum: ["active", "inactive", "maintenance"],
+    }).notNull().default("active"),
+    archivedAt: text("archived_at"),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    check(
+      "units_type_check",
+      sql`${table.unitType} IN ('room', 'apartment', 'villa', 'dormitory_room', 'studio', 'suite', 'other')`,
+    ),
+    check(
+      "units_status_check",
+      sql`${table.status} IN ('active', 'inactive', 'maintenance')`,
+    ),
+    check("units_capacity_positive", sql`${table.capacity} > 0`),
+    check("units_nightly_rate_nonnegative", sql`${table.baseNightlyRateCents} >= 0`),
+    index("units_property_status_archived").on(
+      table.propertyId,
+      table.status,
+      table.archivedAt,
+    ),
+    uniqueIndex("units_property_name_active_unique")
+      .on(table.propertyId, sql`lower(trim(${table.name}))`)
+      .where(sql`${table.archivedAt} IS NULL`),
   ],
 );
