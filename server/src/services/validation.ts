@@ -90,10 +90,10 @@ export function timeValue(value: unknown, field: string): string {
   return value;
 }
 
-export function optionalEmail(value: unknown): string | null {
-  const email = optionalText(value, "Contact email", 254);
+export function optionalEmail(value: unknown, field = "Contact email"): string | null {
+  const email = optionalText(value, field, 254);
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    throw new HttpError(400, "Contact email must be a valid email address.");
+    throw new HttpError(400, `${field} must be a valid email address.`);
   }
   return email;
 }

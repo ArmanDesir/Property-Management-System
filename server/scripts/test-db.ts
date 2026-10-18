@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { eq } from "drizzle-orm";
@@ -40,6 +40,8 @@ try {
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
+    CREATE UNIQUE INDEX guests_email_unique
+      ON guests(email) WHERE email IS NOT NULL AND email <> '';
     CREATE TABLE reservations (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       property_id INTEGER NOT NULL REFERENCES properties(id) ON DELETE RESTRICT,
@@ -59,8 +61,8 @@ try {
     .prepare("INSERT INTO properties (name, address) VALUES (?, ?)")
     .run("Existing Synthetic Property", "2 Example Street");
   database.$client
-    .prepare("INSERT INTO guests (first_name, last_name) VALUES (?, ?)")
-    .run("Test", "Guest");
+    .prepare("INSERT INTO guests (first_name, last_name, email) VALUES (?, ?, ?)")
+    .run("Test", "Guest", "family@example.test");
   database.$client
     .prepare(`
       INSERT INTO reservations (property_id, guest_id, check_in, check_out)
@@ -101,6 +103,26 @@ try {
     [{ property_id: 1, guest_id: 1, check_in: "2030-01-02" }],
   );
   assert.deepEqual(database.$client.prepare("PRAGMA foreign_key_check").all(), []);
+  assert.equal(
+    database.$client
+      .prepare("SELECT name FROM sqlite_schema WHERE type = 'index' AND name = ?")
+      .get("guests_email_unique"),
+    undefined,
+  );
+  const migratedGuest = database.$client
+    .prepare("SELECT first_name, email, status, address, country FROM guests WHERE id = 1")
+    .get();
+  assert.deepEqual(Object.fromEntries(Object.entries(migratedGuest ?? {})), {
+    first_name: "Test",
+    email: "family@example.test",
+    status: "active",
+    address: null,
+    country: null,
+  });
+  database.$client
+    .prepare("INSERT INTO guests (first_name, last_name, email) VALUES (?, ?, ?)")
+    .run("Another", "Family Member", "family@example.test");
+  assert.equal(database.$client.prepare("SELECT COUNT(*) AS count FROM guests").get()?.count, 2);
 
   const migratedTables = database.$client
     .prepare("SELECT name FROM sqlite_schema WHERE type = 'table'")
@@ -124,7 +146,109 @@ try {
     foreignKey.from === "property_id" &&
     foreignKey.on_delete === "RESTRICT"
   ));
-  console.log("Additive migration, history, defaults, and synthetic record preservation test passed.");
+
+  const phase3MigrationDirectory = resolve(testDirectory, "phase3-migrations");
+  const phase3MetaDirectory = resolve(phase3MigrationDirectory, "meta");
+  mkdirSync(phase3MetaDirectory, { recursive: true });
+  copyFileSync(
+    resolve(migrationsFolder, "0002_guest_management.sql"),
+    resolve(phase3MigrationDirectory, "0002_guest_management.sql"),
+  );
+  writeFileSync(
+    resolve(phase3MetaDirectory, "_journal.json"),
+    JSON.stringify({
+      version: "7",
+      dialect: "sqlite",
+      entries: [{
+        idx: 0,
+        version: "6",
+        when: 1,
+        tag: "0002_guest_management",
+        breakpoints: true,
+      }],
+    }),
+  );
+
+  const phase3Database = createDatabase(resolve(testDirectory, "phase3-existing-data.sqlite"));
+  try {
+    phase3Database.$client.exec(`
+      CREATE TABLE properties (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        address TEXT,
+        property_type TEXT NOT NULL DEFAULT 'hotel',
+        status TEXT NOT NULL DEFAULT 'active',
+        timezone TEXT NOT NULL DEFAULT 'UTC',
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE TABLE guests (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        first_name TEXT NOT NULL,
+        last_name TEXT NOT NULL,
+        email TEXT,
+        phone TEXT,
+        notes TEXT,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE UNIQUE INDEX guests_email_unique
+        ON guests(email) WHERE email IS NOT NULL AND email <> '';
+      CREATE TABLE units (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        property_id INTEGER NOT NULL REFERENCES properties(id) ON DELETE RESTRICT,
+        name TEXT NOT NULL,
+        capacity INTEGER NOT NULL,
+        base_nightly_rate_cents INTEGER NOT NULL,
+        status TEXT NOT NULL DEFAULT 'active',
+        archived_at TEXT,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE TABLE reservations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        property_id INTEGER NOT NULL REFERENCES properties(id) ON DELETE RESTRICT,
+        guest_id INTEGER NOT NULL REFERENCES guests(id) ON DELETE RESTRICT,
+        check_in TEXT NOT NULL,
+        check_out TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      INSERT INTO properties (name, address)
+        VALUES ('Preserved Synthetic Property', '1 Example Road');
+      INSERT INTO units (property_id, name, capacity, base_nightly_rate_cents)
+        VALUES (1, 'Preserved Synthetic Unit', 2, 12345);
+      INSERT INTO guests (first_name, last_name, email)
+        VALUES ('Existing', 'Synthetic Guest', 'shared@example.test');
+      INSERT INTO reservations (property_id, guest_id, check_in, check_out)
+        VALUES (1, 1, '2030-04-01', '2030-04-02');
+    `);
+
+    await runMigrations(phase3Database, phase3MigrationDirectory);
+    await runMigrations(phase3Database, phase3MigrationDirectory);
+
+    assert.equal(
+      phase3Database.$client.prepare("SELECT name FROM properties WHERE id = 1").get()?.name,
+      "Preserved Synthetic Property",
+    );
+    assert.equal(
+      phase3Database.$client.prepare("SELECT name FROM units WHERE id = 1").get()?.name,
+      "Preserved Synthetic Unit",
+    );
+    assert.equal(
+      phase3Database.$client.prepare("SELECT guest_id FROM reservations WHERE id = 1").get()?.guest_id,
+      1,
+    );
+    assert.deepEqual(phase3Database.$client.prepare("PRAGMA foreign_key_check").all(), []);
+    phase3Database.$client
+      .prepare("INSERT INTO guests (first_name, last_name, email) VALUES (?, ?, ?)")
+      .run("Second", "Synthetic Guest", "shared@example.test");
+    assert.equal(phase3Database.$client.prepare("SELECT COUNT(*) AS count FROM guests").get()?.count, 2);
+  } finally {
+    phase3Database.$client.close();
+  }
+
+  console.log("Additive migration, repeat safety, shared contacts, and record preservation tests passed.");
 } finally {
   database.$client.close();
   rmSync(testDirectory, { recursive: true, force: true });

@@ -769,7 +769,7 @@ function EmptyState({
   );
 }
 
-function ConfirmDialog({
+export function ConfirmDialog({
   open,
   title,
   detail,

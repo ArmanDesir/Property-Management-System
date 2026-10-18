@@ -1,5 +1,3 @@
-import { apiRequest } from "../../lib/api";
-
 export { apiRequest } from "../../lib/api";
 
 export type PropertyType =

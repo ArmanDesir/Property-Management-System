@@ -15,6 +15,13 @@
       "when": 1792300382477,
       "tag": "0001_property_units",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1792302194691,
+      "tag": "0002_guest_management",
+      "breakpoints": true
     }
   ]
 }

@@ -1,0 +1,139 @@
+.guest-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  min-height: 58px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid #e3e8e0;
+}
+
+.guest-search {
+  display: flex;
+  flex: 1 1 260px;
+  align-items: center;
+  gap: 9px;
+  max-width: 390px;
+  min-height: 38px;
+  padding: 0 10px;
+  border: 1px solid #dfe5dd;
+  border-radius: 4px;
+  color: #809083;
+  background: #fff;
+}
+
+.guest-search:focus-within {
+  border-color: #83a187;
+  box-shadow: 0 0 0 3px #83a18722;
+}
+
+.guest-search > span {
+  font-size: 17px;
+}
+
+.guest-search input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 0;
+  border: 0;
+  outline: 0;
+  color: #2d3a30;
+  background: transparent;
+  font: 11px "Segoe UI", Arial, sans-serif;
+}
+
+.guest-search button {
+  padding: 0 2px;
+  border: 0;
+  color: #829084;
+  background: transparent;
+  font-size: 17px;
+  cursor: pointer;
+}
+
+.guest-toolbar .tab-group {
+  min-height: 48px;
+}
+
+.guest-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.guest-card {
+  width: 100%;
+}
+
+.guest-card-body {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.guest-created {
+  color: #a0a99f;
+  font-size: 9px;
+}
+
+.guest-contact-hint {
+  margin: -9px 0 0;
+  color: #89938a;
+  font-size: 10px;
+}
+
+.guest-details-grid .info-card {
+  min-width: 0;
+}
+
+.guest-notes,
+.guest-history {
+  grid-column: 1 / -1;
+}
+
+.guest-notes p,
+.guest-history p {
+  margin: 0;
+  color: #718075;
+  font-size: 11px;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.guest-history {
+  background: #f8faf6;
+}
+
+@media (max-width: 760px) {
+  .guest-toolbar {
+    flex-wrap: wrap;
+    gap: 8px 14px;
+    padding: 10px 0;
+  }
+
+  .guest-search {
+    flex-basis: 100%;
+    max-width: none;
+  }
+
+  .guest-toolbar .tab-group {
+    min-height: 38px;
+  }
+}
+
+@media (max-width: 620px) {
+  .guest-list {
+    grid-template-columns: 1fr;
+  }
+
+  .guest-details-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .guest-notes,
+  .guest-history {
+    grid-column: auto;
+  }
+}

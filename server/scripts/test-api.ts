@@ -230,6 +230,120 @@ try {
   assert.equal(restoredProperty.status, 200);
   assert.equal(restoredProperty.data.property.status, "active");
 
+  const missingContact = await request("/guests", "POST", {
+    firstName: "No",
+    lastName: "Contact",
+  });
+  assert.equal(missingContact.status, 400);
+  const invalidGuestEmail = await request("/guests", "POST", {
+    firstName: "Invalid",
+    lastName: "Email",
+    email: "not-an-email",
+  });
+  assert.equal(invalidGuestEmail.status, 400);
+  const shortGuestPhone = await request("/guests", "POST", {
+    firstName: "Short",
+    lastName: "Phone",
+    phone: "123",
+  });
+  assert.equal(shortGuestPhone.status, 400);
+  assert.equal(
+    (await request("/guests", "POST", {
+      firstName: "A".repeat(101),
+      lastName: "Long",
+      email: "long@example.test",
+    })).status,
+    400,
+  );
+  const invalidGuestStatus = await request("/guests?status=unknown");
+  assert.equal(invalidGuestStatus.status, 400);
+  const malformedSearch = await request("/guests?q=one&q=two");
+  assert.equal(malformedSearch.status, 400);
+  const invalidGuestBody = await request("/guests", "POST", []);
+  assert.equal(invalidGuestBody.status, 400);
+
+  const firstGuest = await request("/guests", "POST", {
+    firstName: "  Avery ",
+    lastName: " Chen  ",
+    email: "family@example.test",
+    phone: "+1 (555) 010-0200",
+    address: "  12 Example Lane ",
+    country: "  Exampleland ",
+    notes: "Synthetic guest note",
+  });
+  assert.equal(firstGuest.status, 201);
+  const guestId = firstGuest.data.guest.id as number;
+  assert.equal(firstGuest.data.guest.firstName, "Avery");
+  assert.equal(firstGuest.data.guest.lastName, "Chen");
+  assert.equal(firstGuest.data.guest.address, "12 Example Lane");
+  assert.equal(firstGuest.data.guest.country, "Exampleland");
+  assert.equal(firstGuest.data.guest.status, "active");
+
+  const sharedEmailGuest = await request("/guests", "POST", {
+    firstName: "Jordan",
+    lastName: "Chen",
+    email: "family@example.test",
+  });
+  assert.equal(sharedEmailGuest.status, 201);
+  const sharedPhoneGuest = await request("/guests", "POST", {
+    firstName: "Morgan",
+    lastName: "Ray",
+    phone: "+1 (555) 010-0200",
+  });
+  assert.equal(sharedPhoneGuest.status, 201);
+  assert.equal(sharedPhoneGuest.data.guest.email, null);
+
+  assert.equal((await request("/guests")).data.guests.length, 3);
+  assert.equal("notes" in (await request("/guests")).data.guests[0], false);
+  assert.equal((await request("/guests?status=all")).data.guests.length, 3);
+  assert.equal((await request("/guests?status=active&q=avery")).data.guests.length, 1);
+  assert.equal((await request("/guests?status=all&q=FAMILY%40EXAMPLE.TEST")).data.guests.length, 2);
+  assert.equal((await request("/guests?status=all&q=010-0200")).data.guests.length, 2);
+  assert.equal((await request("/guests/not-an-id")).status, 400);
+  assert.equal((await request("/guests/999999")).status, 404);
+  assert.equal((await request("/guests/999999", "PATCH", { firstName: "Missing" })).status, 404);
+  assert.equal((await request("/guests/999999/archive", "POST")).status, 404);
+  assert.equal((await request("/guests/999999/restore", "POST")).status, 404);
+
+  const guestDetails = await request(`/guests/${guestId}`);
+  assert.equal(guestDetails.status, 200);
+  assert.equal(guestDetails.data.guest.email, "family@example.test");
+  const updatedGuest = await request(`/guests/${guestId}`, "PATCH", {
+    firstName: " Avery Rae ",
+    address: "Updated Example Lane",
+  });
+  assert.equal(updatedGuest.status, 200);
+  assert.equal(updatedGuest.data.guest.firstName, "Avery Rae");
+  assert.equal(updatedGuest.data.guest.address, "Updated Example Lane");
+  assert.equal(
+    (await request(`/guests/${guestId}`, "PATCH", { email: null, phone: null })).status,
+    400,
+  );
+  assert.equal((await request(`/guests/${guestId}`, "PATCH", { status: "archived" })).status, 400);
+
+  database.$client
+    .prepare(`
+      INSERT INTO reservations (property_id, guest_id, check_in, check_out)
+      VALUES (?, ?, ?, ?)
+    `)
+    .run(propertyId, guestId, "2030-03-01", "2030-03-02");
+  const archivedGuest = await request(`/guests/${guestId}/archive`, "POST");
+  assert.equal(archivedGuest.status, 200);
+  assert.equal(archivedGuest.data.guest.status, "archived");
+  assert.equal((await request(`/guests/${guestId}`)).data.guest.status, "archived");
+  assert.equal((await request("/guests")).data.guests.length, 2);
+  assert.equal((await request("/guests?status=archived")).data.guests.length, 1);
+  assert.equal(
+    database.$client.prepare("SELECT COUNT(*) AS count FROM reservations WHERE guest_id = ?")
+      .get(guestId)?.count,
+    1,
+  );
+  assert.equal((await request(`/guests/${guestId}`, "PATCH", { firstName: "Blocked" })).status, 409);
+  const restoredGuest = await request(`/guests/${guestId}/restore`, "POST");
+  assert.equal(restoredGuest.status, 200);
+  assert.equal(restoredGuest.data.guest.status, "active");
+  assert.equal((await request("/guests")).data.guests.length, 3);
+
   database.$client
     .prepare("INSERT INTO guests (first_name, last_name) VALUES (?, ?)")
     .run("Synthetic", "History Guest");
@@ -244,7 +358,7 @@ try {
   assert.equal(
     database.$client.prepare("SELECT COUNT(*) AS count FROM reservations WHERE property_id = ?")
       .get(propertyId)?.count,
-    1,
+    2,
   );
   assert.equal(
     (await request(`/properties/${propertyId}/units?includeArchived=true`)).data.units.length,
@@ -267,7 +381,7 @@ try {
   }
   assert.equal(foreignKeyRejected, true);
 
-  console.log("Property and unit API integration tests passed.");
+  console.log("Property, unit, and guest API integration tests passed.");
 } finally {
   if (server?.listening) {
     await new Promise<void>((resolveClose, reject) => {

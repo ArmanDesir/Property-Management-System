@@ -7,6 +7,11 @@ import {
   UnitDetailsPage,
   UnitFormPage,
 } from "./features/properties/PropertiesPages";
+import {
+  GuestDetailsPage,
+  GuestFormPage,
+  GuestsPage,
+} from "./features/guests/GuestPages";
 import "./App.css";
 
 type HealthStatus = "checking" | "online" | "offline";
@@ -19,6 +24,10 @@ type Route =
   | { name: "new-unit"; propertyId: number }
   | { name: "unit-details"; propertyId: number; unitId: number }
   | { name: "edit-unit"; propertyId: number; unitId: number }
+  | { name: "guests" }
+  | { name: "new-guest" }
+  | { name: "guest-details"; guestId: number }
+  | { name: "edit-guest"; guestId: number }
   | { name: "not-found" };
 
 function App() {
@@ -60,6 +69,9 @@ function App() {
   const flash = (message: string) => setNotice(message);
   const route = resolveRoute(pathname);
   const pageProps = { navigate, flash };
+  const isPropertiesRoute = route.name === "properties" ||
+    route.name.includes("property") || route.name.includes("unit");
+  const isGuestsRoute = route.name.includes("guest") || route.name === "guests";
 
   return (
     <main className="shell">
@@ -70,7 +82,8 @@ function App() {
         </a>
         <nav className="main-nav" aria-label="Main navigation">
           <a href="/" className={route.name === "dashboard" ? "nav-link active" : "nav-link"} onClick={linkClick("/", navigate)}>Dashboard</a>
-          <a href="/properties" className={route.name !== "dashboard" ? "nav-link active" : "nav-link"} onClick={linkClick("/properties", navigate)}>Properties</a>
+          <a href="/properties" className={isPropertiesRoute ? "nav-link active" : "nav-link"} onClick={linkClick("/properties", navigate)}>Properties</a>
+          <a href="/guests" className={isGuestsRoute ? "nav-link active" : "nav-link"} onClick={linkClick("/guests", navigate)}>Guests</a>
         </nav>
         <div className="local-badge">
           <span className={`status-dot ${status}`} />
@@ -93,6 +106,10 @@ function App() {
       {route.name === "new-unit" && <UnitFormPage {...pageProps} propertyId={route.propertyId} />}
       {route.name === "unit-details" && <UnitDetailsPage {...pageProps} propertyId={route.propertyId} unitId={route.unitId} />}
       {route.name === "edit-unit" && <UnitFormPage {...pageProps} propertyId={route.propertyId} unitId={route.unitId} />}
+      {route.name === "guests" && <GuestsPage {...pageProps} />}
+      {route.name === "new-guest" && <GuestFormPage {...pageProps} />}
+      {route.name === "guest-details" && <GuestDetailsPage {...pageProps} guestId={route.guestId} />}
+      {route.name === "edit-guest" && <GuestFormPage {...pageProps} guestId={route.guestId} />}
       {route.name === "not-found" && <ErrorState message="We couldn’t find that page." back={() => navigate("/properties")} />}
 
       <footer><span>LOCAL PMS</span><span>Private by nature. Right on your machine.</span></footer>
@@ -145,10 +162,17 @@ function Dashboard({ navigate }: { navigate: (path: string) => void }) {
           </button>
           {[
             ["02", "Reservations", "Booking tools are planned for a future phase.", "▦"],
-            ["03", "Guests", "Guest records are planned for a future phase.", "◎"],
+            ["03", "Guests", "Manage guest profiles and contact details.", "◎"],
             ["04", "Billing", "Billing tools are planned for a future phase.", "↗"],
             ["05", "Housekeeping", "Housekeeping is planned for a future phase.", "✳"],
-          ].map(([number, title, description, icon]) => (
+          ].map(([number, title, description, icon]) => title === "Guests" ? (
+            <button className="area-card area-card-button" key={title} onClick={() => navigate("/guests")}>
+              <span className="card-top"><span className="area-icon">{icon}</span><span className="area-number">{number}</span></span>
+              <span className="area-card-title">{title}</span>
+              <span className="area-card-description">{description}</span>
+              <span className="card-arrow" aria-hidden="true">↗</span>
+            </button>
+          ) : (
             <article className="area-card area-card-pending" key={title} aria-disabled="true">
               <span className="card-top"><span className="area-icon">{icon}</span><span className="area-number">{number}</span></span>
               <span className="area-card-title">{title}</span>
@@ -164,10 +188,18 @@ function Dashboard({ navigate }: { navigate: (path: string) => void }) {
 
 function resolveRoute(path: string): Route {
   if (path === "/") return { name: "dashboard" };
+  if (path === "/guests") return { name: "guests" };
+  if (path === "/guests/new") return { name: "new-guest" };
   if (path === "/properties") return { name: "properties" };
   if (path === "/properties/new") return { name: "new-property" };
 
-  let match = path.match(/^\/properties\/(\d+)\/edit$/);
+  let match = path.match(/^\/guests\/(\d+)\/edit$/);
+  if (match) return { name: "edit-guest", guestId: Number(match[1]) };
+
+  match = path.match(/^\/guests\/(\d+)$/);
+  if (match) return { name: "guest-details", guestId: Number(match[1]) };
+
+  match = path.match(/^\/properties\/(\d+)\/edit$/);
   if (match) return { name: "edit-property", propertyId: Number(match[1]) };
 
   match = path.match(/^\/properties\/(\d+)\/units\/new$/);

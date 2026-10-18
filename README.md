@@ -17,9 +17,9 @@ npm run db:migrate
 npm run dev
 ```
 
-The client runs at <http://127.0.0.1:5173> and the API at <http://127.0.0.1:3000>. Both servers bind only to `127.0.0.1`; the Vite server proxies `/api` to the local API. The app does not call cloud services or external APIs.
+The client runs at <http://127.0.0.1:5173> and the API at <http://127.0.0.1:3000>. Both servers bind only to `127.0.0.1`; the Vite server proxies `/api` to the local API. The app does not call cloud services or external APIs. Loopback binding limits network exposure but is not complete security; authentication is not implemented in this phase, so protect access to the laptop and its user account.
 
-The SQLite database is stored at `data/pms.db`, outside the frontend's public directory. Set `PMS_DATABASE_PATH` to use another local file path (relative paths are resolved from the project root); paths inside `client/public` are rejected. The database and backup files are ignored by Git. Phase 1's initial migration uses `IF NOT EXISTS`; the Phase 2 migration adds property columns and the units table without rebuilding existing tables.
+The SQLite database is stored at `data/pms.db`, outside the frontend's public directory. Set `PMS_DATABASE_PATH` to use another local file path (relative paths are resolved from the project root); paths inside `client/public` are rejected. The database and backup files are ignored by Git. Phase 2 and Phase 3 use additive migrations. Phase 3 adds guest address, country, and status fields, search indexes, and drops the legacy unique email index so family members can share an address. It preserves guest, reservation, property, and unit records.
 
 ## Available commands
 
@@ -48,6 +48,12 @@ The Drizzle schema is in `server/src/db/schema.ts`; generated migrations and jou
 ## API
 
 - `GET http://127.0.0.1:3000/api/health` — service and database status
+- `GET /api/guests?status=active&q=...` — search active guests (status may be `active`, `archived`, or `all`; search checks name, email, and phone)
+- `GET /api/guests/:guestId` — read a guest profile
+- `POST /api/guests` — create a guest (requires a name and at least one email or phone number)
+- `PATCH /api/guests/:guestId` — update an active guest profile
+- `POST /api/guests/:guestId/archive` — archive without deleting
+- `POST /api/guests/:guestId/restore` — restore an archived guest
 - `GET /api/properties?includeArchived=true` — list properties (active by default)
 - `POST /api/properties` — create a property
 - `GET /api/properties/:propertyId` — read property details
@@ -64,3 +70,5 @@ The Drizzle schema is in `server/src/db/schema.ts`; generated migrations and jou
 ## Local data safety
 
 The SQLite database and backup directory are intentionally excluded from version control. Database and API tests use isolated temporary databases with synthetic data and do not write test records to the retained database. Keep independent backups of `data/` when retaining operational data matters.
+
+Guest profiles intentionally exclude government ID, passport, and payment-card details. Guest notes are stored as plain text. Guest archiving retains profile and reservation references; archived guests are filtered out by default and must be restored before future reservation workflows should select them. Reservations are not implemented in this phase.
