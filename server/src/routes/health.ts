@@ -1,11 +1,11 @@
 import { Router } from "express";
-import type { DatabaseSync } from "node:sqlite";
+import type { PmsDatabase } from "../db/connection.js";
 
-export function createHealthRouter(database: DatabaseSync): Router {
+export function createHealthRouter(database: PmsDatabase): Router {
   const router = Router();
 
   router.get("/", (_request, response) => {
-    database.prepare("SELECT 1").get();
+    database.$client.prepare("SELECT 1").get();
     response.json({ status: "ok", database: "connected" });
   });
 

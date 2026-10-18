@@ -1,27 +1,16 @@
-import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import { migrate } from "drizzle-orm/node-sqlite/migrator";
 import { fileURLToPath } from "node:url";
-import { initializeSchema } from "./schema.js";
+import { createDatabase } from "./connection.js";
 
-const moduleDirectory = dirname(fileURLToPath(import.meta.url));
-const defaultDatabasePath = resolve(moduleDirectory, "../../../data/pms.db");
-const databasePath = process.env.DATABASE_PATH
-  ? resolve(process.env.DATABASE_PATH)
-  : defaultDatabasePath;
+const database = createDatabase();
+const migrationsFolder = resolve(dirname(fileURLToPath(import.meta.url)), "migrations");
+migrate(database, { migrationsFolder });
 
-mkdirSync(dirname(databasePath), { recursive: true });
-const database = new DatabaseSync(databasePath);
-database.exec("PRAGMA journal_mode = WAL");
-database.exec("PRAGMA foreign_keys = ON");
-
-const migrationPath = fileURLToPath(new URL("./migrations/0001_initial.sql", import.meta.url));
-initializeSchema(database, migrationPath);
-
-export function getDatabase(): DatabaseSync {
+export function getDatabase() {
   return database;
 }
 
 export function closeDatabase(): void {
-  database.close();
+  database.$client.close();
 }
