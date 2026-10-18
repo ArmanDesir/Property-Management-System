@@ -214,6 +214,10 @@ export const units = sqliteTable(
     status: text("status", {
       enum: ["active", "inactive", "maintenance"],
     }).notNull().default("active"),
+    housekeepingStatus: text("housekeeping_status", {
+      enum: ["dirty", "cleaning", "clean"],
+    }).notNull().default("dirty"),
+    lastCleanedAt: text("last_cleaned_at"),
     archivedAt: text("archived_at"),
     createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
     updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
@@ -227,10 +231,20 @@ export const units = sqliteTable(
       "units_status_check",
       sql`${table.status} IN ('active', 'inactive', 'maintenance')`,
     ),
+    check(
+      "units_housekeeping_status_check",
+      sql`${table.housekeepingStatus} IN ('dirty', 'cleaning', 'clean')`,
+    ),
     check("units_capacity_positive", sql`${table.capacity} > 0`),
     check("units_nightly_rate_nonnegative", sql`${table.baseNightlyRateCents} >= 0`),
     index("units_property_status_archived").on(
       table.propertyId,
+      table.status,
+      table.archivedAt,
+    ),
+    index("units_property_housekeeping").on(
+      table.propertyId,
+      table.housekeepingStatus,
       table.status,
       table.archivedAt,
     ),

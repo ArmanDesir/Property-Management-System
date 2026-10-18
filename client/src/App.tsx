@@ -18,6 +18,7 @@ import {
   ReservationsPage,
 } from "./features/reservations/ReservationPages";
 import { FrontDeskPage } from "./features/front-desk/FrontDeskPage";
+import { HousekeepingPage } from "./features/housekeeping/HousekeepingPage";
 import "./App.css";
 
 type HealthStatus = "checking" | "online" | "offline";
@@ -36,6 +37,7 @@ type Route =
   | { name: "edit-guest"; guestId: number }
   | { name: "reservations" }
   | { name: "front-desk" }
+  | { name: "housekeeping" }
   | { name: "new-reservation" }
   | { name: "reservation-details"; reservationId: number }
   | { name: "edit-reservation"; reservationId: number }
@@ -128,6 +130,13 @@ function App() {
             Front Desk
           </a>
           <a
+            href="/housekeeping"
+            className={route.name === "housekeeping" ? "nav-link active" : "nav-link"}
+            onClick={linkClick("/housekeeping", navigate)}
+          >
+            Housekeeping
+          </a>
+          <a
             href="/properties"
             className={isPropertiesRoute ? "nav-link active" : "nav-link"}
             onClick={linkClick("/properties", navigate)}
@@ -218,6 +227,7 @@ function App() {
         />
       )}
       {route.name === "front-desk" && <FrontDeskPage {...pageProps} />}
+      {route.name === "housekeeping" && <HousekeepingPage {...pageProps} />}
       {route.name === "new-reservation" && (
         <ReservationFormPage key={locationSearch} {...pageProps} />
       )}
@@ -336,11 +346,11 @@ function Dashboard({ navigate }: { navigate: (path: string) => void }) {
             [
               "06",
               "Housekeeping",
-              "Housekeeping is planned for a future phase.",
+              "Track unit cleaning and maintenance availability.",
               "✳",
             ],
           ].map(([number, title, description, icon]) =>
-            title === "Guests" || title === "Reservations" || title === "Front Desk" ? (
+            title === "Guests" || title === "Reservations" || title === "Front Desk" || title === "Housekeeping" ? (
               <button
                 className="area-card area-card-button"
                 key={title}
@@ -349,7 +359,9 @@ function Dashboard({ navigate }: { navigate: (path: string) => void }) {
                     ? "/guests"
                     : title === "Reservations"
                       ? "/reservations"
-                      : "/front-desk",
+                      : title === "Front Desk"
+                        ? "/front-desk"
+                        : "/housekeeping",
                 )}
               >
                 <span className="card-top">
@@ -392,6 +404,7 @@ function resolveRoute(path: string): Route {
   if (path === "/properties/new") return { name: "new-property" };
   if (path === "/reservations") return { name: "reservations" };
   if (path === "/front-desk") return { name: "front-desk" };
+  if (path === "/housekeeping") return { name: "housekeeping" };
   if (path === "/reservations/new") return { name: "new-reservation" };
 
   let match = path.match(/^\/guests\/(\d+)\/edit$/);

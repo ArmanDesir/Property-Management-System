@@ -132,6 +132,77 @@ try {
   const unitId = createdUnit.data.unit.id as number;
   assert.equal(createdUnit.data.unit.propertyId, propertyId);
   assert.equal(createdUnit.data.unit.baseNightlyRateCents, 12550);
+  assert.equal(createdUnit.data.unit.housekeepingStatus, "dirty");
+
+  const housekeepingList = await request("/housekeeping");
+  assert.equal(housekeepingList.status, 200);
+  assert.equal(housekeepingList.data.housekeeping.summary.needsCleaning, 1);
+  assert.equal(housekeepingList.data.housekeeping.units.length, 1);
+  const filteredHousekeeping = await request(
+    `/housekeeping?propertyId=${propertyId}&status=dirty`,
+  );
+  assert.equal(filteredHousekeeping.status, 200);
+  assert.equal(filteredHousekeeping.data.housekeeping.units[0].id, unitId);
+  assert.equal(filteredHousekeeping.data.housekeeping.units[0].activeStay, null);
+  assert.equal(
+    (await request(`/housekeeping?propertyId=${propertyId}&status=clean`))
+      .data.housekeeping.units.length,
+    0,
+  );
+  assert.equal((await request("/housekeeping?propertyId=not-an-id")).status, 400);
+  assert.equal((await request("/housekeeping?propertyId=999999")).status, 404);
+  assert.equal((await request("/housekeeping?status=unknown")).status, 400);
+  assert.equal((await request(`/housekeeping?propertyId=${propertyId}&propertyId=${propertyId}`)).status, 400);
+  assert.equal((await request("/housekeeping/units/not-an-id/status", "PATCH", { status: "dirty" })).status, 400);
+  assert.equal((await request("/housekeeping/units/999999/status", "PATCH", { status: "dirty" })).status, 404);
+  assert.equal((await request(`/housekeeping/units/${unitId}/status`, "PATCH", { status: "unknown" })).status, 400);
+  assert.equal((await request(`/housekeeping/units/${unitId}/status`, "PATCH", { status: "clean" })).status, 409);
+
+  const cleaningStarted = await request(
+    `/housekeeping/units/${unitId}/status`,
+    "PATCH",
+    { status: "cleaning" },
+  );
+  assert.equal(cleaningStarted.status, 200);
+  assert.equal(cleaningStarted.data.unit.housekeepingStatus, "cleaning");
+  assert.equal(
+    (await request(`/housekeeping/units/${unitId}/status`, "PATCH", { status: "cleaning" })).status,
+    200,
+  );
+  const unitCleaned = await request(
+    `/housekeeping/units/${unitId}/status`,
+    "PATCH",
+    { status: "clean" },
+  );
+  assert.equal(unitCleaned.status, 200);
+  assert.equal(unitCleaned.data.unit.housekeepingStatus, "clean");
+  assert.ok(unitCleaned.data.unit.lastCleanedAt);
+  const lastCleanedAt = unitCleaned.data.unit.lastCleanedAt as string;
+  assert.ok(Number.isFinite(Date.parse(lastCleanedAt)));
+  assert.equal(
+    (await request(`/housekeeping?propertyId=${propertyId}`))
+      .data.housekeeping.summary.clean,
+    1,
+  );
+  assert.equal(
+    (await request(`/housekeeping/units/${unitId}/status`, "PATCH", { status: "clean" }))
+      .data.unit.lastCleanedAt,
+    lastCleanedAt,
+  );
+  assert.equal(
+    (await request(`/housekeeping/units/${unitId}/status`, "PATCH", { status: "cleaning" })).status,
+    409,
+  );
+  assert.equal(
+    (await request(`/housekeeping/units/${unitId}/status`, "PATCH", { status: "dirty" }))
+      .data.unit.housekeepingStatus,
+    "dirty",
+  );
+  assert.equal(
+    (await request(`/housekeeping?propertyId=${propertyId}&status=dirty`))
+      .data.housekeeping.summary.needsCleaning,
+    1,
+  );
 
   const unitsList = await request(`/properties/${propertyId}/units`);
   assert.equal(unitsList.status, 200);
@@ -555,6 +626,9 @@ try {
   assert.ok(checkedIn);
   assert.equal(checkedIn.data.reservation.stayStatus, "checked_in");
   assert.ok(checkedIn.data.reservation.actualCheckInAt);
+  const occupiedHousekeeping = await request(`/housekeeping?propertyId=${propertyId}`);
+  assert.equal(occupiedHousekeeping.data.housekeeping.units
+    .find((unit: { id: number }) => unit.id === unitId).activeStay.guestName, "Jordan Chen");
   const inHouseDashboard = await request(`/front-desk?date=${today}`);
   assert.equal(inHouseDashboard.data.frontDesk.summary.checkedIn, 1);
   assert.equal(inHouseDashboard.data.frontDesk.inHouse[0].id, arrivalId);
@@ -617,9 +691,16 @@ try {
     baseNightlyRate: 120,
   });
   assert.equal(overdueUnit.status, 201);
+  const overdueUnitId = overdueUnit.data.unit.id as number;
+  assert.equal(
+    (await request(`/housekeeping/units/${overdueUnitId}/status`, "PATCH", {
+      status: "cleaning",
+    })).status,
+    200,
+  );
   const overdueReservation = await request("/reservations", "POST", {
     ...frontDeskInput,
-    unitId: overdueUnit.data.unit.id as number,
+    unitId: overdueUnitId,
     checkIn: yesterday,
     checkOut: tomorrow,
   });
@@ -637,9 +718,79 @@ try {
     200,
   );
   assert.equal(
-    (await request(`/reservations/${overdueReservationId}/check-out`, "POST")).status,
+    (await request(`/housekeeping/units/${overdueUnitId}/status`, "PATCH", {
+      status: "clean",
+    })).status,
+    409,
+  );
+  const ineligibleCleaning = await request(`/reservations/${overdueReservationId}`);
+  assert.equal(ineligibleCleaning.data.reservation.stayStatus, "checked_in");
+  const overdueCheckout = await request(
+    `/reservations/${overdueReservationId}/check-out`,
+    "POST",
+  );
+  assert.equal(overdueCheckout.status, 200);
+  assert.equal(overdueCheckout.data.reservation.stayStatus, "checked_out");
+  assert.ok(overdueCheckout.data.reservation.actualCheckOutAt);
+  assert.equal(
+    (await request(`/housekeeping?propertyId=${propertyId}`))
+      .data.housekeeping.units
+      .find((unit: { id: number }) => unit.id === overdueUnitId).activeStay,
+    null,
+  );
+  const checkedOutUnit = database.$client
+    .prepare("SELECT status, housekeeping_status FROM units WHERE id = ?")
+    .get(overdueUnitId);
+  assert.deepEqual(Object.fromEntries(Object.entries(checkedOutUnit ?? {})), {
+    status: "active",
+    housekeeping_status: "dirty",
+  });
+  assert.equal(
+    (await request(`/housekeeping/units/${overdueUnitId}/status`, "PATCH", {
+      status: "cleaning",
+    })).status,
     200,
   );
+  const postCheckoutClean = await request(
+    `/housekeeping/units/${overdueUnitId}/status`,
+    "PATCH",
+    { status: "clean" },
+  );
+  assert.equal(postCheckoutClean.status, 200);
+  assert.ok(postCheckoutClean.data.unit.lastCleanedAt);
+  assert.equal(postCheckoutClean.data.unit.operationalStatus, "active");
+  const stillBooked = await request(
+    `/reservations/availability?unitId=${overdueUnitId}&checkIn=${yesterday}&checkOut=${tomorrow}&numberOfGuests=1`,
+  );
+  assert.equal(stillBooked.data.availability.available, false);
+  assert.equal(
+    (await request(`/properties/${propertyId}/units/${overdueUnitId}/status`, "PATCH", {
+      status: "maintenance",
+    })).status,
+    200,
+  );
+  const maintenanceCleanUnit = await request(
+    `/housekeeping/units/${overdueUnitId}/status`,
+    "PATCH",
+    { status: "dirty" },
+  );
+  assert.equal(maintenanceCleanUnit.data.unit.operationalStatus, "maintenance");
+  const cleanMaintenanceUnit = await request(
+    `/housekeeping/units/${overdueUnitId}/status`,
+    "PATCH",
+    { status: "cleaning" },
+  );
+  assert.equal(cleanMaintenanceUnit.data.unit.operationalStatus, "maintenance");
+  const completedMaintenanceCleaning = await request(
+    `/housekeeping/units/${overdueUnitId}/status`,
+    "PATCH",
+    { status: "clean" },
+  );
+  assert.equal(completedMaintenanceCleaning.data.unit.housekeepingStatus, "clean");
+  assert.equal(completedMaintenanceCleaning.data.unit.operationalStatus, "maintenance");
+  const cleanedHistory = await request(`/reservations/${overdueReservationId}`);
+  assert.equal(cleanedHistory.data.reservation.status, "confirmed");
+  assert.equal(cleanedHistory.data.reservation.stayStatus, "checked_out");
 
   const raceInput = {
     ...reservationInput,
@@ -699,7 +850,7 @@ try {
   }
   assert.equal(foreignKeyRejected, true);
 
-  console.log("Property, unit, guest, reservation, and front-desk API integration tests passed.");
+  console.log("Property, unit, guest, reservation, front-desk, and housekeeping API integration tests passed.");
 } finally {
   if (server?.listening) {
     await new Promise<void>((resolveClose, reject) => {

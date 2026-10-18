@@ -19,7 +19,7 @@ npm run dev
 
 The client runs at <http://127.0.0.1:5173> and the API at <http://127.0.0.1:3000>. Both servers bind only to `127.0.0.1`; the Vite server proxies `/api` to the local API. The app does not call cloud services or external APIs. Loopback binding limits network exposure but is not complete security; authentication is not implemented in this phase, so protect access to the laptop and its user account.
 
-The SQLite database is stored at `data/pms.db`, outside the frontend's public directory. Set `PMS_DATABASE_PATH` to use another local file path (relative paths are resolved from the project root); paths inside `client/public` are rejected. The database and backup files are ignored by Git. Phase 2 through Phase 5 use additive migrations. Phase 4 extends the existing reservations table in place: legacy reservation IDs, dependent foreign keys, and history are preserved. Legacy reservations retain a null unit assignment because the previous schema did not track units; their reference and lifecycle state are backfilled. Phase 5 adds separate stay status and actual check-in/check-out timestamps to the existing reservations; existing rows start as not checked in, with actual timestamps left null.
+The SQLite database is stored at `data/pms.db`, outside the frontend's public directory. Set `PMS_DATABASE_PATH` to use another local file path (relative paths are resolved from the project root); paths inside `client/public` are rejected. The database and backup files are ignored by Git. Phase 2 through Phase 6 use additive migrations. Phase 4 extends the existing reservations table in place: legacy reservation IDs, dependent foreign keys, and history are preserved. Legacy reservations retain a null unit assignment because the previous schema did not track units; their reference and lifecycle state are backfilled. Phase 5 adds separate stay status and actual check-in/check-out timestamps to the existing reservations; existing rows start as not checked in, with actual timestamps left null. Phase 6 adds housekeeping status and last-cleaned timestamp columns to units; existing units start as needing cleaning, while their operational and reservation statuses remain unchanged.
 
 ## Available commands
 
@@ -31,7 +31,7 @@ The SQLite database is stored at `data/pms.db`, outside the frontend's public di
 | `npm run db:generate` | Generate a migration from the Drizzle schema |
 | `npm run db:migrate` | Apply pending migrations to the local database |
 | `npm run test:db` | Verify migrations and synthetic database read/write in a temporary database |
-| `npm run test:api` | Exercise property, unit, guest, reservation, and front-desk endpoints against a temporary database |
+| `npm run test:api` | Exercise property, unit, guest, reservation, front-desk, and housekeeping endpoints against a temporary database |
 | `npm test` | Run database and API integration tests |
 
 ## Project layout
@@ -66,6 +66,8 @@ The Drizzle schema is in `server/src/db/schema.ts`; generated migrations and jou
 - `PUT /api/properties/:propertyId/units/:unitId` — update an unarchived unit
 - `DELETE /api/properties/:propertyId/units/:unitId` — archive a unit; does not delete it
 - `PATCH /api/properties/:propertyId/units/:unitId/status` — change status or restore an archived unit
+- `GET /api/housekeeping?propertyId=...&status=dirty|cleaning|clean|all` — housekeeping summary and unit list, optionally filtered by active property and cleaning status
+- `PATCH /api/housekeeping/units/:unitId/status` — transition housekeeping state among dirty, cleaning, and clean
 - `GET /api/front-desk?date=YYYY-MM-DD` — local arrivals, departures, in-house stays, and overdue arrivals for a date (defaults to the machine's local date)
 - `POST /api/reservations/:reservationId/check-in` — record an eligible guest check-in and its actual timestamp
 - `POST /api/reservations/:reservationId/check-out` — record a current guest check-out and its actual timestamp
@@ -77,7 +79,7 @@ The Drizzle schema is in `server/src/db/schema.ts`; generated migrations and jou
 - `PATCH /api/reservations/:reservationId/status` — confirm, cancel, or complete a reservation using allowed lifecycle transitions
 - `DELETE /api/reservations/:reservationId` — safely cancel an active reservation; it does not delete history
 
-Reservations use half-open stay intervals (`check_in <= date < check_out`). Pending and confirmed reservations hold inventory; cancelled and completed records do not. Creation, confirmation, and edits validate unit/property/guest eligibility, capacity, and overlap inside a synchronous SQLite `BEGIN IMMEDIATE` transaction. Database triggers independently reject invalid relationships and conflicting active reservations. Check-in requires a confirmed reservation, an eligible date, and an active property, guest, and unit; an active stay occupies its assigned unit until check-out. Reservation lifecycle and occupancy status are distinct. Check-out does not automatically change unit status or mark it ready for another guest. SQLite's busy timeout is five seconds; a lock timeout is reported as a retryable `503`. Reservation references are generated locally and kept unique.
+Reservations use half-open stay intervals (`check_in <= date < check_out`). Pending and confirmed reservations hold inventory; cancelled and completed records do not. Creation, confirmation, and edits validate unit/property/guest eligibility, capacity, and overlap inside a synchronous SQLite `BEGIN IMMEDIATE` transaction. Database triggers independently reject invalid relationships and conflicting active reservations. Check-in requires a confirmed reservation, an eligible date, and an active property, guest, and unit; an active stay occupies its assigned unit until check-out. Reservation lifecycle, occupancy, housekeeping, and operational unit status are distinct. Housekeeping progresses through dirty → cleaning → clean, with cleaning able to return to dirty; clean records the completion timestamp. Cleaning actions cannot mark an occupied unit clean or start cleaning it, and do not change the unit's operational status. A checked-out stay marks its unit dirty atomically while retaining the reservation and checkout timestamp. A unit under maintenance remains unavailable after housekeeping is completed; housekeeping status does not override reservation availability or overlap rules. SQLite's busy timeout is five seconds; a lock timeout is reported as a retryable `503`. Reservation references are generated locally and kept unique.
 
 ## Local data safety
 

@@ -191,6 +191,11 @@ export function checkOutReservation(
       SET stay_status = 'checked_out', actual_check_out_at = ?, updated_at = ?
       WHERE id = ? AND stay_status = 'checked_in'
     `).run(now.toISOString(), now.toISOString(), id);
+    client.prepare(`
+      UPDATE units
+      SET housekeeping_status = 'dirty', updated_at = ?
+      WHERE id = ? AND housekeeping_status <> 'dirty'
+    `).run(now.toISOString(), existing.unit_id);
     return reservationWithUnitStatus(database, id);
   });
 }

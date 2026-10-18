@@ -1,5 +1,12 @@
 import assert from "node:assert/strict";
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { eq } from "drizzle-orm";
@@ -157,6 +164,10 @@ try {
     .map((row) => row.name);
   assert.ok(migratedTables.includes("reservations"));
   assert.ok(migratedTables.includes("units"));
+  assert.ok(
+    database.$client.prepare("PRAGMA table_info(units)").all()
+      .some((column) => column.name === "housekeeping_status"),
+  );
 
   const migratedProperty = database.$client
     .prepare("SELECT property_type, default_currency, status FROM properties WHERE name = ?")
@@ -275,7 +286,64 @@ try {
     phase3Database.$client.close();
   }
 
-  console.log("Additive migration, legacy reservation preservation, repeat safety, and data integrity tests passed.");
+  const priorPhase5MigrationsDirectory = resolve(testDirectory, "prior-phase5-migrations");
+  const priorPhase5MetaDirectory = resolve(priorPhase5MigrationsDirectory, "meta");
+  mkdirSync(priorPhase5MetaDirectory, { recursive: true });
+  const priorMigrationTags = [
+    "0000_initial",
+    "0001_property_units",
+    "0002_guest_management",
+    "0003_reservations",
+    "0004_front_desk",
+  ];
+  for (const tag of priorMigrationTags) {
+    copyFileSync(
+      resolve(migrationsFolder, `${tag}.sql`),
+      resolve(priorPhase5MigrationsDirectory, `${tag}.sql`),
+    );
+  }
+  const currentJournal = JSON.parse(
+    readFileSync(resolve(migrationsFolder, "meta/_journal.json"), "utf8"),
+  ) as { version: string; dialect: string; entries: unknown[] };
+  writeFileSync(
+    resolve(priorPhase5MetaDirectory, "_journal.json"),
+    JSON.stringify({ ...currentJournal, entries: currentJournal.entries.slice(0, 5) }, null, 2),
+  );
+
+  const prePhase5Database = createDatabase(resolve(testDirectory, "pre-phase5-existing-data.sqlite"));
+  try {
+    await runMigrations(prePhase5Database, priorPhase5MigrationsDirectory);
+    prePhase5Database.$client
+      .prepare("INSERT INTO properties (name) VALUES (?)")
+      .run("Housekeeping Preservation Property");
+    prePhase5Database.$client.prepare(`
+      INSERT INTO units (property_id, name, unit_type, capacity, base_nightly_rate_cents, status)
+      VALUES (1, 'Existing Maintenance Unit', 'room', 2, 14000, 'maintenance')
+    `).run();
+
+    await runMigrations(prePhase5Database, migrationsFolder);
+    const preservedUnit = prePhase5Database.$client.prepare(`
+      SELECT id, property_id, name, status, housekeeping_status, last_cleaned_at
+      FROM units WHERE id = 1
+    `).get();
+    assert.deepEqual(Object.fromEntries(Object.entries(preservedUnit ?? {})), {
+      id: 1,
+      property_id: 1,
+      name: "Existing Maintenance Unit",
+      status: "maintenance",
+      housekeeping_status: "dirty",
+      last_cleaned_at: null,
+    });
+    assert.equal(
+      prePhase5Database.$client.prepare("SELECT COUNT(*) AS count FROM __drizzle_migrations").get()?.count,
+      6,
+    );
+    assert.deepEqual(prePhase5Database.$client.prepare("PRAGMA foreign_key_check").all(), []);
+  } finally {
+    prePhase5Database.$client.close();
+  }
+
+  console.log("Additive migration, preserved unit/reservation records, repeat safety, and data integrity tests passed.");
 } finally {
   database.$client.close();
   rmSync(testDirectory, { recursive: true, force: true });

@@ -1,0 +1,943 @@
+{
+  "version": "6",
+  "dialect": "sqlite",
+  "id": "da1ac912-ca6b-4b51-a28f-03facc17f1b6",
+  "prevId": "f07b84ac-5ea3-420a-a5d1-1d584c8ff4a7",
+  "tables": {
+    "billing_entries": {
+      "name": "billing_entries",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "reservation_id": {
+          "name": "reservation_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "amount_cents": {
+          "name": "amount_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "entry_type": {
+          "name": "entry_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'posted'"
+        },
+        "occurred_at": {
+          "name": "occurred_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        }
+      },
+      "indexes": {
+        "billing_reservation": {
+          "name": "billing_reservation",
+          "columns": [
+            "reservation_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "billing_entries_reservation_id_reservations_id_fk": {
+          "name": "billing_entries_reservation_id_reservations_id_fk",
+          "tableFrom": "billing_entries",
+          "tableTo": "reservations",
+          "columnsFrom": [
+            "reservation_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "billing_entry_type_check": {
+          "name": "billing_entry_type_check",
+          "value": "\"billing_entries\".\"entry_type\" IN ('charge', 'payment', 'refund')"
+        },
+        "billing_status_check": {
+          "name": "billing_status_check",
+          "value": "\"billing_entries\".\"status\" IN ('pending', 'posted', 'void')"
+        }
+      }
+    },
+    "guests": {
+      "name": "guests",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "first_name": {
+          "name": "first_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "last_name": {
+          "name": "last_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "phone": {
+          "name": "phone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "address": {
+          "name": "address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "country": {
+          "name": "country",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'active'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        }
+      },
+      "indexes": {
+        "guests_status_name_search": {
+          "name": "guests_status_name_search",
+          "columns": [
+            "status",
+            "last_name",
+            "first_name"
+          ],
+          "isUnique": false
+        },
+        "guests_email_search": {
+          "name": "guests_email_search",
+          "columns": [
+            "email"
+          ],
+          "isUnique": false
+        },
+        "guests_phone_search": {
+          "name": "guests_phone_search",
+          "columns": [
+            "phone"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "guests_status_check": {
+          "name": "guests_status_check",
+          "value": "\"guests\".\"status\" IN ('active', 'archived')"
+        }
+      }
+    },
+    "housekeeping_tasks": {
+      "name": "housekeeping_tasks",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "property_id": {
+          "name": "property_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "reservation_id": {
+          "name": "reservation_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "due_at": {
+          "name": "due_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'pending'"
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        }
+      },
+      "indexes": {
+        "housekeeping_property_status": {
+          "name": "housekeeping_property_status",
+          "columns": [
+            "property_id",
+            "status"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "housekeeping_tasks_property_id_properties_id_fk": {
+          "name": "housekeeping_tasks_property_id_properties_id_fk",
+          "tableFrom": "housekeeping_tasks",
+          "tableTo": "properties",
+          "columnsFrom": [
+            "property_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "housekeeping_tasks_reservation_id_reservations_id_fk": {
+          "name": "housekeeping_tasks_reservation_id_reservations_id_fk",
+          "tableFrom": "housekeeping_tasks",
+          "tableTo": "reservations",
+          "columnsFrom": [
+            "reservation_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "housekeeping_status_check": {
+          "name": "housekeeping_status_check",
+          "value": "\"housekeeping_tasks\".\"status\" IN ('pending', 'in_progress', 'complete', 'cancelled')"
+        }
+      }
+    },
+    "properties": {
+      "name": "properties",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "property_type": {
+          "name": "property_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'other'"
+        },
+        "address": {
+          "name": "address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "contact_name": {
+          "name": "contact_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "contact_email": {
+          "name": "contact_email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "contact_phone": {
+          "name": "contact_phone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "default_currency": {
+          "name": "default_currency",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'USD'"
+        },
+        "default_check_in_time": {
+          "name": "default_check_in_time",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'15:00'"
+        },
+        "default_check_out_time": {
+          "name": "default_check_out_time",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'11:00'"
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'active'"
+        },
+        "timezone": {
+          "name": "timezone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'UTC'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "properties_type_check": {
+          "name": "properties_type_check",
+          "value": "\"properties\".\"property_type\" IN ('hotel', 'resort', 'hostel', 'apartment', 'vacation_rental', 'other')"
+        },
+        "properties_status_check": {
+          "name": "properties_status_check",
+          "value": "\"properties\".\"status\" IN ('active', 'archived')"
+        },
+        "properties_currency_check": {
+          "name": "properties_currency_check",
+          "value": "\"properties\".\"default_currency\" GLOB '[A-Z][A-Z][A-Z]'"
+        },
+        "properties_check_in_time_check": {
+          "name": "properties_check_in_time_check",
+          "value": "\"properties\".\"default_check_in_time\" GLOB '[0-2][0-9]:[0-5][0-9]' AND substr(\"properties\".\"default_check_in_time\", 1, 2) BETWEEN '00' AND '23'"
+        },
+        "properties_check_out_time_check": {
+          "name": "properties_check_out_time_check",
+          "value": "\"properties\".\"default_check_out_time\" GLOB '[0-2][0-9]:[0-5][0-9]' AND substr(\"properties\".\"default_check_out_time\", 1, 2) BETWEEN '00' AND '23'"
+        }
+      }
+    },
+    "reservations": {
+      "name": "reservations",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "reservation_reference": {
+          "name": "reservation_reference",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "property_id": {
+          "name": "property_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "guest_id": {
+          "name": "guest_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "unit_id": {
+          "name": "unit_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "check_in": {
+          "name": "check_in",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "check_out": {
+          "name": "check_out",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "number_of_guests": {
+          "name": "number_of_guests",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 1
+        },
+        "nightly_rate_cents": {
+          "name": "nightly_rate_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "lifecycle_status": {
+          "name": "lifecycle_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'confirmed'"
+        },
+        "stay_status": {
+          "name": "stay_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'not_checked_in'"
+        },
+        "actual_check_in_at": {
+          "name": "actual_check_in_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "actual_check_out_at": {
+          "name": "actual_check_out_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'booked'"
+        },
+        "total_amount_cents": {
+          "name": "total_amount_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "currency": {
+          "name": "currency",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'USD'"
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        }
+      },
+      "indexes": {
+        "reservations_property_dates": {
+          "name": "reservations_property_dates",
+          "columns": [
+            "property_id",
+            "check_in",
+            "check_out"
+          ],
+          "isUnique": false
+        },
+        "reservations_guest": {
+          "name": "reservations_guest",
+          "columns": [
+            "guest_id"
+          ],
+          "isUnique": false
+        },
+        "reservations_unit_dates_status": {
+          "name": "reservations_unit_dates_status",
+          "columns": [
+            "unit_id",
+            "check_in",
+            "check_out",
+            "lifecycle_status"
+          ],
+          "isUnique": false
+        },
+        "reservations_stay_status_dates": {
+          "name": "reservations_stay_status_dates",
+          "columns": [
+            "lifecycle_status",
+            "stay_status",
+            "check_in",
+            "check_out"
+          ],
+          "isUnique": false
+        },
+        "reservations_unit_stay_status": {
+          "name": "reservations_unit_stay_status",
+          "columns": [
+            "unit_id",
+            "stay_status",
+            "actual_check_out_at"
+          ],
+          "isUnique": false
+        },
+        "reservations_reference_unique": {
+          "name": "reservations_reference_unique",
+          "columns": [
+            "reservation_reference"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "reservations_property_id_properties_id_fk": {
+          "name": "reservations_property_id_properties_id_fk",
+          "tableFrom": "reservations",
+          "tableTo": "properties",
+          "columnsFrom": [
+            "property_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "reservations_guest_id_guests_id_fk": {
+          "name": "reservations_guest_id_guests_id_fk",
+          "tableFrom": "reservations",
+          "tableTo": "guests",
+          "columnsFrom": [
+            "guest_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "reservations_unit_id_units_id_fk": {
+          "name": "reservations_unit_id_units_id_fk",
+          "tableFrom": "reservations",
+          "tableTo": "units",
+          "columnsFrom": [
+            "unit_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "reservations_status_check": {
+          "name": "reservations_status_check",
+          "value": "\"reservations\".\"status\" IN ('booked', 'checked_in', 'checked_out', 'cancelled')"
+        },
+        "reservations_lifecycle_status_check": {
+          "name": "reservations_lifecycle_status_check",
+          "value": "\"reservations\".\"lifecycle_status\" IN ('pending', 'confirmed', 'cancelled', 'completed')"
+        },
+        "reservations_stay_status_check": {
+          "name": "reservations_stay_status_check",
+          "value": "\"reservations\".\"stay_status\" IN ('not_checked_in', 'checked_in', 'checked_out')"
+        },
+        "reservations_number_of_guests_positive": {
+          "name": "reservations_number_of_guests_positive",
+          "value": "\"reservations\".\"number_of_guests\" > 0"
+        },
+        "reservations_nightly_rate_nonnegative": {
+          "name": "reservations_nightly_rate_nonnegative",
+          "value": "\"reservations\".\"nightly_rate_cents\" >= 0"
+        },
+        "reservations_total_nonnegative": {
+          "name": "reservations_total_nonnegative",
+          "value": "\"reservations\".\"total_amount_cents\" >= 0"
+        },
+        "reservations_checkout_after_checkin": {
+          "name": "reservations_checkout_after_checkin",
+          "value": "\"reservations\".\"check_out\" > \"reservations\".\"check_in\""
+        }
+      }
+    },
+    "units": {
+      "name": "units",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "property_id": {
+          "name": "property_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "unit_type": {
+          "name": "unit_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'room'"
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "capacity": {
+          "name": "capacity",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "base_nightly_rate_cents": {
+          "name": "base_nightly_rate_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'active'"
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        },
+        "housekeeping_status": {
+          "name": "housekeeping_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'dirty'"
+        },
+        "last_cleaned_at": {
+          "name": "last_cleaned_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "units_property_status_archived": {
+          "name": "units_property_status_archived",
+          "columns": [
+            "property_id",
+            "status",
+            "archived_at"
+          ],
+          "isUnique": false
+        },
+        "units_property_name_active_unique": {
+          "name": "units_property_name_active_unique",
+          "columns": [
+            "property_id",
+            "lower(trim(\"name\"))"
+          ],
+          "isUnique": true,
+          "where": "\"units\".\"archived_at\" IS NULL"
+        },
+        "units_property_housekeeping": {
+          "name": "units_property_housekeeping",
+          "columns": [
+            "property_id",
+            "housekeeping_status",
+            "status",
+            "archived_at"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "units_property_id_properties_id_fk": {
+          "name": "units_property_id_properties_id_fk",
+          "tableFrom": "units",
+          "tableTo": "properties",
+          "columnsFrom": [
+            "property_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "units_type_check": {
+          "name": "units_type_check",
+          "value": "\"units\".\"unit_type\" IN ('room', 'apartment', 'villa', 'dormitory_room', 'studio', 'suite', 'other')"
+        },
+        "units_status_check": {
+          "name": "units_status_check",
+          "value": "\"units\".\"status\" IN ('active', 'inactive', 'maintenance')"
+        },
+        "units_capacity_positive": {
+          "name": "units_capacity_positive",
+          "value": "\"units\".\"capacity\" > 0"
+        },
+        "units_nightly_rate_nonnegative": {
+          "name": "units_nightly_rate_nonnegative",
+          "value": "\"units\".\"base_nightly_rate_cents\" >= 0"
+        },
+        "units_housekeeping_status_check": {
+          "name": "units_housekeeping_status_check",
+          "value": "\"units\".\"housekeeping_status\" IN ('dirty', 'cleaning', 'clean')"
+        }
+      }
+    }
+  },
+  "views": {},
+  "enums": {},
+  "_meta": {
+    "schemas": {},
+    "tables": {},
+    "columns": {}
+  },
+  "internal": {
+    "indexes": {
+      "units_property_name_active_unique": {
+        "columns": {
+          "lower(trim(\"name\"))": {
+            "isExpression": true
+          }
+        }
+      }
+    }
+  }
+}

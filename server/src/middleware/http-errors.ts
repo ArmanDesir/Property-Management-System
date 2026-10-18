@@ -35,6 +35,12 @@ export const errorHandler: ErrorRequestHandler = (error: unknown, _request, resp
 
   if (isDatabaseError(error, "SQLITE_CONSTRAINT_TRIGGER", 1811)) {
     const triggerMessage = databaseErrorMessage(error);
+    if (triggerMessage.includes("unit_housekeeping_conflict")) {
+      response.status(409).json({
+        error: "This housekeeping transition is invalid or cannot be completed while the unit is occupied.",
+      });
+      return;
+    }
     if (triggerMessage.includes("unit_has_active_stay")) {
       response.status(409).json({
         error: "This unit cannot be deactivated, archived, or put into maintenance while a guest is checked in.",
