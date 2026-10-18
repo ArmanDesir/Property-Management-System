@@ -331,8 +331,20 @@ export function PropertyDetailsPage({
         </div>
         <div className="heading-actions">
           <span className={`status-pill ${property.status}`}>{property.status}</span>
+          <button
+            className="button button-secondary"
+            onClick={() => navigate(`/reservations?propertyId=${propertyId}`)}
+          >
+            View reservations
+          </button>
           {property.status === "active" ? (
             <>
+              <button
+                className="button button-secondary"
+                onClick={() => navigate(`/reservations/new?propertyId=${propertyId}`)}
+              >
+                New reservation
+              </button>
               <button className="button button-secondary" onClick={() => navigate(`/properties/${propertyId}/edit`)}>Edit details</button>
               <button className="button button-danger-outline" onClick={() => setConfirmArchive(true)}>Archive</button>
             </>
@@ -619,6 +631,20 @@ export function UnitDetailsPage({
         </div>
         <div className="heading-actions">
           <span className={`status-pill ${archived ? "archived" : unit.status}`}>{archived ? "archived" : unit.status}</span>
+          <button
+            className="button button-secondary"
+            onClick={() => navigate(`/reservations?propertyId=${propertyId}&unitId=${unitId}`)}
+          >
+            View reservations
+          </button>
+          {!archived && property.status === "active" && unit.status === "active" && (
+            <button
+              className="button button-secondary"
+              onClick={() => navigate(`/reservations/new?propertyId=${propertyId}&unitId=${unitId}`)}
+            >
+              New reservation
+            </button>
+          )}
           {!archived && property.status === "active" && (
             <>
               <button className="button button-secondary" onClick={() => navigate(`/properties/${propertyId}/units/${unitId}/edit`)}>Edit unit</button>

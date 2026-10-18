@@ -12,6 +12,12 @@ import {
   GuestFormPage,
   GuestsPage,
 } from "./features/guests/GuestPages";
+import {
+  ReservationDetailsPage,
+  ReservationFormPage,
+  ReservationsPage,
+} from "./features/reservations/ReservationPages";
+import { FrontDeskPage } from "./features/front-desk/FrontDeskPage";
 import "./App.css";
 
 type HealthStatus = "checking" | "online" | "offline";
@@ -28,15 +34,24 @@ type Route =
   | { name: "new-guest" }
   | { name: "guest-details"; guestId: number }
   | { name: "edit-guest"; guestId: number }
+  | { name: "reservations" }
+  | { name: "front-desk" }
+  | { name: "new-reservation" }
+  | { name: "reservation-details"; reservationId: number }
+  | { name: "edit-reservation"; reservationId: number }
   | { name: "not-found" };
 
 function App() {
   const [pathname, setPathname] = useState(window.location.pathname);
+  const [locationSearch, setLocationSearch] = useState(window.location.search);
   const [status, setStatus] = useState<HealthStatus>("checking");
   const [notice, setNotice] = useState("");
 
   useEffect(() => {
-    const onPopState = () => setPathname(window.location.pathname);
+    const onPopState = () => {
+      setPathname(window.location.pathname);
+      setLocationSearch(window.location.search);
+    };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
@@ -60,8 +75,12 @@ function App() {
   }, []);
 
   const navigate = (path: string) => {
-    if (path !== window.location.pathname) window.history.pushState({}, "", path);
-    setPathname(path);
+    const url = new URL(path, window.location.origin);
+    if (`${url.pathname}${url.search}` !== `${window.location.pathname}${window.location.search}`) {
+      window.history.pushState({}, "", url);
+    }
+    setPathname(url.pathname);
+    setLocationSearch(url.search);
     setNotice("");
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -69,50 +88,156 @@ function App() {
   const flash = (message: string) => setNotice(message);
   const route = resolveRoute(pathname);
   const pageProps = { navigate, flash };
-  const isPropertiesRoute = route.name === "properties" ||
-    route.name.includes("property") || route.name.includes("unit");
+  const isPropertiesRoute =
+    route.name === "properties" ||
+    route.name.includes("property") ||
+    route.name.includes("unit");
   const isGuestsRoute = route.name.includes("guest") || route.name === "guests";
+  const isReservationsRoute =
+    route.name.includes("reservation") || route.name === "reservations";
 
   return (
     <main className="shell">
       <header className="topbar">
-        <a className="brand" href="/" onClick={linkClick("/", navigate)} aria-label="Local PMS dashboard">
+        <a
+          className="brand"
+          href="/"
+          onClick={linkClick("/", navigate)}
+          aria-label="ZCSMST PMS dashboard"
+        >
           <span className="brand-mark">L</span>
-          <span>local<span className="brand-light">pms</span></span>
+          <span>
+            ZCSMST<span className="brand-light">pms</span>
+          </span>
         </a>
         <nav className="main-nav" aria-label="Main navigation">
-          <a href="/" className={route.name === "dashboard" ? "nav-link active" : "nav-link"} onClick={linkClick("/", navigate)}>Dashboard</a>
-          <a href="/properties" className={isPropertiesRoute ? "nav-link active" : "nav-link"} onClick={linkClick("/properties", navigate)}>Properties</a>
-          <a href="/guests" className={isGuestsRoute ? "nav-link active" : "nav-link"} onClick={linkClick("/guests", navigate)}>Guests</a>
+          <a
+            href="/"
+            className={
+              route.name === "dashboard" ? "nav-link active" : "nav-link"
+            }
+            onClick={linkClick("/", navigate)}
+          >
+            Dashboard
+          </a>
+          <a
+            href="/front-desk"
+            className={route.name === "front-desk" ? "nav-link active" : "nav-link"}
+            onClick={linkClick("/front-desk", navigate)}
+          >
+            Front Desk
+          </a>
+          <a
+            href="/properties"
+            className={isPropertiesRoute ? "nav-link active" : "nav-link"}
+            onClick={linkClick("/properties", navigate)}
+          >
+            Properties
+          </a>
+          <a
+            href="/guests"
+            className={isGuestsRoute ? "nav-link active" : "nav-link"}
+            onClick={linkClick("/guests", navigate)}
+          >
+            Guests
+          </a>
+          <a
+            href="/reservations"
+            className={isReservationsRoute ? "nav-link active" : "nav-link"}
+            onClick={linkClick("/reservations", navigate)}
+          >
+            Reservations
+          </a>
         </nav>
         <div className="local-badge">
           <span className={`status-dot ${status}`} />
-          {status === "checking" ? "Connecting" : status === "online" ? "Local system ready" : "API offline"}
+          {status === "checking"
+            ? "Connecting"
+            : status === "online"
+              ? "ZCSMST PMS ready"
+              : "API offline"}
         </div>
       </header>
 
       {notice && (
         <div className="success-banner" role="status">
-          <span aria-hidden="true">✓</span>{notice}
-          <button aria-label="Dismiss notification" onClick={() => setNotice("")}>×</button>
+          <span aria-hidden="true">✓</span>
+          {notice}
+          <button
+            aria-label="Dismiss notification"
+            onClick={() => setNotice("")}
+          >
+            ×
+          </button>
         </div>
       )}
 
       {route.name === "dashboard" && <Dashboard navigate={navigate} />}
       {route.name === "properties" && <PropertiesPage {...pageProps} />}
       {route.name === "new-property" && <PropertyFormPage {...pageProps} />}
-      {route.name === "property-details" && <PropertyDetailsPage {...pageProps} propertyId={route.propertyId} />}
-      {route.name === "edit-property" && <PropertyFormPage {...pageProps} propertyId={route.propertyId} />}
-      {route.name === "new-unit" && <UnitFormPage {...pageProps} propertyId={route.propertyId} />}
-      {route.name === "unit-details" && <UnitDetailsPage {...pageProps} propertyId={route.propertyId} unitId={route.unitId} />}
-      {route.name === "edit-unit" && <UnitFormPage {...pageProps} propertyId={route.propertyId} unitId={route.unitId} />}
+      {route.name === "property-details" && (
+        <PropertyDetailsPage {...pageProps} propertyId={route.propertyId} />
+      )}
+      {route.name === "edit-property" && (
+        <PropertyFormPage {...pageProps} propertyId={route.propertyId} />
+      )}
+      {route.name === "new-unit" && (
+        <UnitFormPage {...pageProps} propertyId={route.propertyId} />
+      )}
+      {route.name === "unit-details" && (
+        <UnitDetailsPage
+          {...pageProps}
+          propertyId={route.propertyId}
+          unitId={route.unitId}
+        />
+      )}
+      {route.name === "edit-unit" && (
+        <UnitFormPage
+          {...pageProps}
+          propertyId={route.propertyId}
+          unitId={route.unitId}
+        />
+      )}
       {route.name === "guests" && <GuestsPage {...pageProps} />}
       {route.name === "new-guest" && <GuestFormPage {...pageProps} />}
-      {route.name === "guest-details" && <GuestDetailsPage {...pageProps} guestId={route.guestId} />}
-      {route.name === "edit-guest" && <GuestFormPage {...pageProps} guestId={route.guestId} />}
-      {route.name === "not-found" && <ErrorState message="We couldn’t find that page." back={() => navigate("/properties")} />}
+      {route.name === "guest-details" && (
+        <GuestDetailsPage {...pageProps} guestId={route.guestId} />
+      )}
+      {route.name === "edit-guest" && (
+        <GuestFormPage {...pageProps} guestId={route.guestId} />
+      )}
+      {route.name === "reservations" && (
+        <ReservationsPage
+          key={locationSearch}
+          {...pageProps}
+          initialFilters={{
+            propertyId: new URLSearchParams(locationSearch).get("propertyId") ?? "",
+            guestId: new URLSearchParams(locationSearch).get("guestId") ?? "",
+            unitId: new URLSearchParams(locationSearch).get("unitId") ?? "",
+          }}
+        />
+      )}
+      {route.name === "front-desk" && <FrontDeskPage {...pageProps} />}
+      {route.name === "new-reservation" && (
+        <ReservationFormPage key={locationSearch} {...pageProps} />
+      )}
+      {route.name === "reservation-details" && (
+        <ReservationDetailsPage {...pageProps} reservationId={route.reservationId} />
+      )}
+      {route.name === "edit-reservation" && (
+        <ReservationFormPage {...pageProps} reservationId={route.reservationId} />
+      )}
+      {route.name === "not-found" && (
+        <ErrorState
+          message="We couldn’t find that page."
+          back={() => navigate("/properties")}
+        />
+      )}
 
-      <footer><span>LOCAL PMS</span><span>Private by nature. Right on your machine.</span></footer>
+      <footer>
+        <span>ZCSMST PMS</span>
+        <span>Private by nature. Right on your machine.</span>
+      </footer>
     </main>
   );
 }
@@ -122,26 +247,50 @@ function Dashboard({ navigate }: { navigate: (path: string) => void }) {
     <>
       <section className="hero">
         <div className="hero-copy">
-          <p className="eyebrow"><span /> YOUR PROPERTY, IN GOOD ORDER</p>
-          <h1>A calmer way to<br />run your <em>stay.</em></h1>
-          <p className="hero-description">
-            Keep your properties and rentable spaces organized, all together and right here on your machine.
+          <p className="eyebrow">
+            <span /> YOUR PROPERTY, IN GOOD ORDER
           </p>
-          <button className="primary-link" onClick={() => navigate("/properties")}>
+          <h1>
+            A calmer way to
+            <br />
+            run your <em>stay.</em>
+          </h1>
+          <p className="hero-description">
+            Keep your properties and rentable spaces organized, all together and
+            right here on your machine.
+          </p>
+          <button
+            className="primary-link"
+            onClick={() => navigate("/properties")}
+          >
             Explore your properties <span aria-hidden="true">↘</span>
           </button>
         </div>
         <div className="hero-art" aria-hidden="true">
           <div className="sun" />
           <div className="art-card">
-            <div className="art-window"><span /><span /><span /></div>
+            <div className="art-window">
+              <span />
+              <span />
+              <span />
+            </div>
             <div className="art-building">
               <div className="building-roof" />
-              <div className="building-body"><i /><i /><i /><i /><i /><i /></div>
+              <div className="building-body">
+                <i />
+                <i />
+                <i />
+                <i />
+                <i />
+                <i />
+              </div>
             </div>
             <div className="art-ground" />
           </div>
-          <div className="art-note"><span className="note-check">✓</span><span>All in one place</span></div>
+          <div className="art-note">
+            <span className="note-check">✓</span>
+            <span>All in one place</span>
+          </div>
         </div>
       </section>
 
@@ -151,35 +300,84 @@ function Dashboard({ navigate }: { navigate: (path: string) => void }) {
             <p className="eyebrow">YOUR WORKSPACE</p>
             <h2>Start with the essentials.</h2>
           </div>
-          <p className="section-aside">Manage your properties<br />and places to stay.</p>
+          <p className="section-aside">
+            Manage your properties
+            <br />
+            and places to stay.
+          </p>
         </div>
         <div className="area-grid">
-          <button className="area-card area-card-button" onClick={() => navigate("/properties")}>
-            <span className="card-top"><span className="area-icon">⌂</span><span className="area-number">01</span></span>
+          <button
+            className="area-card area-card-button"
+            onClick={() => navigate("/properties")}
+          >
+            <span className="card-top">
+              <span className="area-icon">⌂</span>
+              <span className="area-number">01</span>
+            </span>
             <span className="area-card-title">Properties</span>
-            <span className="area-card-description">Manage locations, property details, and rentable spaces.</span>
-            <span className="card-arrow" aria-hidden="true">↗</span>
+            <span className="area-card-description">
+              Manage locations, property details, and rentable spaces.
+            </span>
+            <span className="card-arrow" aria-hidden="true">
+              ↗
+            </span>
           </button>
           {[
-            ["02", "Reservations", "Booking tools are planned for a future phase.", "▦"],
-            ["03", "Guests", "Manage guest profiles and contact details.", "◎"],
-            ["04", "Billing", "Billing tools are planned for a future phase.", "↗"],
-            ["05", "Housekeeping", "Housekeeping is planned for a future phase.", "✳"],
-          ].map(([number, title, description, icon]) => title === "Guests" ? (
-            <button className="area-card area-card-button" key={title} onClick={() => navigate("/guests")}>
-              <span className="card-top"><span className="area-icon">{icon}</span><span className="area-number">{number}</span></span>
-              <span className="area-card-title">{title}</span>
-              <span className="area-card-description">{description}</span>
-              <span className="card-arrow" aria-hidden="true">↗</span>
-            </button>
-          ) : (
-            <article className="area-card area-card-pending" key={title} aria-disabled="true">
-              <span className="card-top"><span className="area-icon">{icon}</span><span className="area-number">{number}</span></span>
-              <span className="area-card-title">{title}</span>
-              <span className="area-card-description">{description}</span>
-              <span className="planned-label">Planned</span>
-            </article>
-          ))}
+            ["02", "Front Desk", "Manage today’s arrivals, departures, and in-house stays.", "↔"],
+            ["03", "Reservations", "Manage dates, availability, and stays.", "▦"],
+            ["04", "Guests", "Manage guest profiles and contact details.", "◎"],
+            [
+              "05",
+              "Billing",
+              "Billing tools are planned for a future phase.",
+              "↗",
+            ],
+            [
+              "06",
+              "Housekeeping",
+              "Housekeeping is planned for a future phase.",
+              "✳",
+            ],
+          ].map(([number, title, description, icon]) =>
+            title === "Guests" || title === "Reservations" || title === "Front Desk" ? (
+              <button
+                className="area-card area-card-button"
+                key={title}
+                onClick={() => navigate(
+                  title === "Guests"
+                    ? "/guests"
+                    : title === "Reservations"
+                      ? "/reservations"
+                      : "/front-desk",
+                )}
+              >
+                <span className="card-top">
+                  <span className="area-icon">{icon}</span>
+                  <span className="area-number">{number}</span>
+                </span>
+                <span className="area-card-title">{title}</span>
+                <span className="area-card-description">{description}</span>
+                <span className="card-arrow" aria-hidden="true">
+                  ↗
+                </span>
+              </button>
+            ) : (
+              <article
+                className="area-card area-card-pending"
+                key={title}
+                aria-disabled="true"
+              >
+                <span className="card-top">
+                  <span className="area-icon">{icon}</span>
+                  <span className="area-number">{number}</span>
+                </span>
+                <span className="area-card-title">{title}</span>
+                <span className="area-card-description">{description}</span>
+                <span className="planned-label">Planned</span>
+              </article>
+            ),
+          )}
         </div>
       </section>
     </>
@@ -192,12 +390,21 @@ function resolveRoute(path: string): Route {
   if (path === "/guests/new") return { name: "new-guest" };
   if (path === "/properties") return { name: "properties" };
   if (path === "/properties/new") return { name: "new-property" };
+  if (path === "/reservations") return { name: "reservations" };
+  if (path === "/front-desk") return { name: "front-desk" };
+  if (path === "/reservations/new") return { name: "new-reservation" };
 
   let match = path.match(/^\/guests\/(\d+)\/edit$/);
   if (match) return { name: "edit-guest", guestId: Number(match[1]) };
 
   match = path.match(/^\/guests\/(\d+)$/);
   if (match) return { name: "guest-details", guestId: Number(match[1]) };
+
+  match = path.match(/^\/reservations\/(\d+)\/edit$/);
+  if (match) return { name: "edit-reservation", reservationId: Number(match[1]) };
+
+  match = path.match(/^\/reservations\/(\d+)$/);
+  if (match) return { name: "reservation-details", reservationId: Number(match[1]) };
 
   match = path.match(/^\/properties\/(\d+)\/edit$/);
   if (match) return { name: "edit-property", propertyId: Number(match[1]) };
@@ -237,7 +444,8 @@ function linkClick(path: string, navigate: (path: string) => void) {
       event.ctrlKey ||
       event.shiftKey ||
       event.altKey
-    ) return;
+    )
+      return;
     event.preventDefault();
     navigate(path);
   };

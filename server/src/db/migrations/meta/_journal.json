@@ -22,6 +22,20 @@
       "when": 1792302194691,
       "tag": "0002_guest_management",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1792305124970,
+      "tag": "0003_reservations",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1792306947247,
+      "tag": "0004_front_desk",
+      "breakpoints": true
     }
   ]
 }

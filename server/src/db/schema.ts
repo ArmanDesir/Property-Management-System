@@ -73,15 +73,27 @@ export const reservations = sqliteTable(
   "reservations",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
+    reservationReference: text("reservation_reference"),
     propertyId: integer("property_id")
       .notNull()
       .references(() => properties.id, { onDelete: "restrict" }),
     guestId: integer("guest_id")
       .notNull()
       .references(() => guests.id, { onDelete: "restrict" }),
+    unitId: integer("unit_id").references(() => units.id, { onDelete: "restrict" }),
     checkIn: text("check_in").notNull(),
     checkOut: text("check_out").notNull(),
-    status: text("status", {
+    numberOfGuests: integer("number_of_guests").notNull().default(1),
+    nightlyRateCents: integer("nightly_rate_cents").notNull().default(0),
+    reservationStatus: text("lifecycle_status", {
+      enum: ["pending", "confirmed", "cancelled", "completed"],
+    }).notNull().default("confirmed"),
+    stayStatus: text("stay_status", {
+      enum: ["not_checked_in", "checked_in", "checked_out"],
+    }).notNull().default("not_checked_in"),
+    actualCheckInAt: text("actual_check_in_at"),
+    actualCheckOutAt: text("actual_check_out_at"),
+    legacyStatus: text("status", {
       enum: ["booked", "checked_in", "checked_out", "cancelled"],
     }).notNull().default("booked"),
     totalAmountCents: integer("total_amount_cents").notNull().default(0),
@@ -93,8 +105,18 @@ export const reservations = sqliteTable(
   (table) => [
     check(
       "reservations_status_check",
-      sql`${table.status} IN ('booked', 'checked_in', 'checked_out', 'cancelled')`,
+      sql`${table.legacyStatus} IN ('booked', 'checked_in', 'checked_out', 'cancelled')`,
     ),
+    check(
+      "reservations_lifecycle_status_check",
+      sql`${table.reservationStatus} IN ('pending', 'confirmed', 'cancelled', 'completed')`,
+    ),
+    check(
+      "reservations_stay_status_check",
+      sql`${table.stayStatus} IN ('not_checked_in', 'checked_in', 'checked_out')`,
+    ),
+    check("reservations_number_of_guests_positive", sql`${table.numberOfGuests} > 0`),
+    check("reservations_nightly_rate_nonnegative", sql`${table.nightlyRateCents} >= 0`),
     check("reservations_total_nonnegative", sql`${table.totalAmountCents} >= 0`),
     check("reservations_checkout_after_checkin", sql`${table.checkOut} > ${table.checkIn}`),
     index("reservations_property_dates").on(
@@ -103,6 +125,24 @@ export const reservations = sqliteTable(
       table.checkOut,
     ),
     index("reservations_guest").on(table.guestId),
+    index("reservations_unit_dates_status").on(
+      table.unitId,
+      table.checkIn,
+      table.checkOut,
+      table.reservationStatus,
+    ),
+    index("reservations_stay_status_dates").on(
+      table.reservationStatus,
+      table.stayStatus,
+      table.checkIn,
+      table.checkOut,
+    ),
+    index("reservations_unit_stay_status").on(
+      table.unitId,
+      table.stayStatus,
+      table.actualCheckOutAt,
+    ),
+    uniqueIndex("reservations_reference_unique").on(table.reservationReference),
   ],
 );
 

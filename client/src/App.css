@@ -37,7 +37,7 @@ h1 em { color: #6e9278; font-weight: 500; }
 .section-heading .eyebrow { margin-bottom: 10px; }
 h2 { margin: 0; font: 600 24px "Segoe UI", Arial, sans-serif; letter-spacing: -1px; }
 .section-aside { margin: 0 0 2px; color: #889189; font-size: 11px; line-height: 1.7; }
-.area-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
+.area-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
 .area-card { position: relative; min-height: 173px; padding: 16px 15px; border: 1px solid #e5e9e1; border-radius: 5px; background: #fbfcf9; transition: border-color .2s, transform .2s, box-shadow .2s; }
 .area-card:hover { transform: translateY(-3px); border-color: #c4d2c4; box-shadow: 0 8px 24px #3142330b; }
 .area-card-button { display: flex; width: 100%; flex-direction: column; text-align: left; color: inherit; font: inherit; cursor: pointer; }

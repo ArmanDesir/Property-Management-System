@@ -12,6 +12,10 @@ import {
   type GuestListItem,
   type GuestStatusFilter,
 } from "./api";
+import {
+  formatReservationMoney,
+  type Reservation,
+} from "../reservations/api";
 import "./Guests.css";
 
 type PageProps = {
@@ -327,6 +331,10 @@ export function GuestFormPage({ guestId, navigate, flash }: PageProps & { guestI
 
 export function GuestDetailsPage({ guestId, navigate, flash }: PageProps & { guestId: number }) {
   const [guest, setGuest] = useState<Guest | null>(null);
+  const [reservations, setReservations] = useState<Reservation[]>([]);
+  const [reservationCount, setReservationCount] = useState(0);
+  const [reservationsLoading, setReservationsLoading] = useState(true);
+  const [reservationError, setReservationError] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [archiveOpen, setArchiveOpen] = useState(false);
@@ -343,6 +351,26 @@ export function GuestDetailsPage({ guestId, navigate, flash }: PageProps & { gue
       })
       .finally(() => {
         if (current) setLoading(false);
+      });
+    return () => {
+      current = false;
+    };
+  }, [guestId]);
+
+  useEffect(() => {
+    let current = true;
+    const params = new URLSearchParams({ guestId: String(guestId), limit: "5" });
+    apiRequest<{ reservations: Reservation[]; total: number }>(`/reservations?${params.toString()}`)
+      .then((result) => {
+        if (!current) return;
+        setReservations(result.reservations);
+        setReservationCount(result.total);
+      })
+      .catch((reason: unknown) => {
+        if (current) setReservationError(errorMessage(reason));
+      })
+      .finally(() => {
+        if (current) setReservationsLoading(false);
       });
     return () => {
       current = false;
@@ -443,7 +471,36 @@ export function GuestDetailsPage({ guestId, navigate, flash }: PageProps & { gue
         )}
         <article className="info-card guest-history">
           <h2>Reservation history</h2>
-          <p>Reservations will be available in a future phase. No booking history is shown yet.</p>
+          {reservationsLoading && <p>Loading locally stored reservations…</p>}
+          {reservationError && <p className="guest-history-error" role="alert">{reservationError}</p>}
+          {!reservationsLoading && !reservationError && reservations.length === 0 && (
+            <p>No reservation history is recorded for this guest.</p>
+          )}
+          {!reservationsLoading && !reservationError && reservations.length > 0 && (
+            <div className="guest-reservation-list">
+              {reservations.map((reservation) => (
+                <button
+                  className="guest-reservation-row"
+                  key={reservation.id}
+                  onClick={() => navigate(`/reservations/${reservation.id}`)}
+                >
+                  <span><strong>{reservation.reservationReference}</strong><small>{reservation.propertyName} · {reservation.unitName ?? "No unit assigned"}</small></span>
+                  <span><strong>{reservation.checkIn} – {reservation.checkOut}</strong><small>{formatReservationMoney(reservation.totalAmountCents, reservation.currency)}</small></span>
+                  <span className={`status-pill reservation-status ${reservation.status}`}>{reservation.status}</span>
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="guest-history-actions">
+            <button className="text-button" onClick={() => navigate(`/reservations?guestId=${guest.id}`)}>
+              View all {reservationCount} {reservationCount === 1 ? "reservation" : "reservations"} ↗
+            </button>
+            {guest.status === "active" && (
+              <button className="text-button" onClick={() => navigate(`/reservations/new?guestId=${guest.id}`)}>
+                Create reservation ↗
+              </button>
+            )}
+          </div>
         </article>
       </div>
 

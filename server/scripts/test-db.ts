@@ -102,6 +102,33 @@ try {
     retainedReservation.map((row) => Object.fromEntries(Object.entries(row))),
     [{ property_id: 1, guest_id: 1, check_in: "2030-01-02" }],
   );
+  const migratedReservation = database.$client
+    .prepare(`
+      SELECT id, reservation_reference, unit_id, number_of_guests,
+        nightly_rate_cents, lifecycle_status, stay_status,
+        actual_check_in_at, actual_check_out_at
+      FROM reservations WHERE id = 1
+    `)
+    .get();
+  assert.deepEqual(Object.fromEntries(Object.entries(migratedReservation ?? {})), {
+    id: 1,
+    reservation_reference: "LEGACY-000001",
+    unit_id: null,
+    number_of_guests: 1,
+    nightly_rate_cents: 0,
+    lifecycle_status: "confirmed",
+    stay_status: "not_checked_in",
+    actual_check_in_at: null,
+    actual_check_out_at: null,
+  });
+  assert.ok(
+    database.$client.prepare("PRAGMA foreign_key_list(billing_entries)").all()
+      .some((foreignKey) => foreignKey.table === "reservations"),
+  );
+  assert.ok(
+    database.$client.prepare("PRAGMA foreign_key_list(housekeeping_tasks)").all()
+      .some((foreignKey) => foreignKey.table === "reservations"),
+  );
   assert.deepEqual(database.$client.prepare("PRAGMA foreign_key_check").all(), []);
   assert.equal(
     database.$client
@@ -248,7 +275,7 @@ try {
     phase3Database.$client.close();
   }
 
-  console.log("Additive migration, repeat safety, shared contacts, and record preservation tests passed.");
+  console.log("Additive migration, legacy reservation preservation, repeat safety, and data integrity tests passed.");
 } finally {
   database.$client.close();
   rmSync(testDirectory, { recursive: true, force: true });

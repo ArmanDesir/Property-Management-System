@@ -24,6 +24,7 @@ export function createDatabase(
 
   mkdirSync(dirname(resolvedDatabasePath), { recursive: true });
   const client = new DatabaseSync(resolvedDatabasePath);
+  client.exec("PRAGMA busy_timeout = 5000");
   client.exec("PRAGMA journal_mode = WAL");
   client.exec("PRAGMA foreign_keys = ON");
 

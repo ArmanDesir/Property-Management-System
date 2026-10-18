@@ -6,6 +6,11 @@ import type { AddressInfo } from "node:net";
 import { createApp } from "../src/app.js";
 import { createDatabase } from "../src/db/connection.js";
 import { runMigrations } from "../src/db/migrations.js";
+import {
+  checkInReservation,
+  checkOutReservation,
+} from "../src/services/front-desk.js";
+import { HttpError } from "../src/middleware/http-errors.js";
 
 const testDirectory = mkdtempSync(resolve(tmpdir(), "local-pms-api-test-"));
 const database = createDatabase(resolve(testDirectory, "api-test.sqlite"));
@@ -321,12 +326,107 @@ try {
   );
   assert.equal((await request(`/guests/${guestId}`, "PATCH", { status: "archived" })).status, 400);
 
-  database.$client
-    .prepare(`
-      INSERT INTO reservations (property_id, guest_id, check_in, check_out)
-      VALUES (?, ?, ?, ?)
-    `)
-    .run(propertyId, guestId, "2030-03-01", "2030-03-02");
+  const activatedUnit = await request(
+    `/properties/${propertyId}/units/${unitId}/status`,
+    "PATCH",
+    { status: "active" },
+  );
+  assert.equal(activatedUnit.status, 200);
+  const reservationInput = {
+    guestId,
+    unitId,
+    checkIn: "2030-03-01",
+    checkOut: "2030-03-03",
+    numberOfGuests: 2,
+    nightlyRate: 150,
+    notes: "Synthetic reservation note",
+  };
+  const createdReservation = await request("/reservations", "POST", reservationInput);
+  assert.equal(createdReservation.status, 201);
+  const reservationId = createdReservation.data.reservation.id as number;
+  assert.equal(createdReservation.data.reservation.status, "pending");
+  assert.equal(createdReservation.data.reservation.totalAmountCents, 30000);
+  assert.equal(createdReservation.data.reservation.propertyId, propertyId);
+  assert.equal(createdReservation.data.reservation.unitId, unitId);
+  assert.match(createdReservation.data.reservation.reservationReference, /^R-[0-9A-F-]{36}$/);
+
+  assert.equal((await request("/reservations/not-an-id")).status, 400);
+  assert.equal((await request("/reservations/999999")).status, 404);
+  assert.equal((await request("/reservations", "POST", {
+    ...reservationInput,
+    checkIn: "2030-02-30",
+  })).status, 400);
+  assert.equal((await request("/reservations", "POST", {
+    ...reservationInput,
+    checkIn: "2030-03-04",
+    checkOut: "2030-03-03",
+  })).status, 400);
+  assert.equal((await request("/reservations", "POST", {
+    ...reservationInput,
+    guestId: 999999,
+  })).status, 404);
+  assert.equal((await request("/reservations", "POST", {
+    ...reservationInput,
+    unitId: 999999,
+  })).status, 404);
+  assert.equal((await request("/reservations", "POST", {
+    ...reservationInput,
+    numberOfGuests: 5,
+  })).status, 400);
+  assert.equal((await request("/reservations", "POST", {
+    ...reservationInput,
+    nightlyRate: -0.01,
+  })).status, 400);
+  assert.equal((await request("/reservations", "POST", {
+    ...reservationInput,
+    nightlyRate: 9.999,
+  })).status, 400);
+  assert.equal((await request("/reservations", "POST", {
+    unitId,
+    guestId,
+  })).status, 400);
+
+  const availabilityConflict = await request(
+    "/reservations/availability?unitId=" + unitId +
+      "&checkIn=2030-03-02&checkOut=2030-03-04&numberOfGuests=1",
+  );
+  assert.equal(availabilityConflict.status, 200);
+  assert.equal(availabilityConflict.data.availability.available, false);
+  assert.equal(
+    (await request(
+      "/reservations/availability?unitId=" + unitId +
+        "&checkIn=2030-03-03&checkOut=2030-03-05&numberOfGuests=1",
+    )).data.availability.available,
+    true,
+  );
+  const overlap = await request("/reservations", "POST", {
+    ...reservationInput,
+    checkIn: "2030-03-02",
+    checkOut: "2030-03-04",
+  });
+  assert.equal(overlap.status, 409);
+
+  assert.throws(() => {
+    database.$client.prepare(`
+      INSERT INTO reservations (
+        reservation_reference, property_id, guest_id, unit_id, check_in, check_out,
+        number_of_guests, nightly_rate_cents, lifecycle_status, status,
+        total_amount_cents, currency
+      ) VALUES ('RAW-OVERLAP', ?, ?, ?, '2030-03-02', '2030-03-04', 1, 15000,
+        'pending', 'booked', 30000, 'USD')
+    `).run(propertyId, guestId, unitId);
+  }, /reservation_conflict/);
+
+  const backToBack = await request("/reservations", "POST", {
+    ...reservationInput,
+    guestId: sharedEmailGuest.data.guest.id,
+    checkIn: "2030-03-03",
+    checkOut: "2030-03-05",
+    nightlyRate: 175,
+  });
+  assert.equal(backToBack.status, 201);
+  const backToBackId = backToBack.data.reservation.id as number;
+
   const archivedGuest = await request(`/guests/${guestId}/archive`, "POST");
   assert.equal(archivedGuest.status, 200);
   assert.equal(archivedGuest.data.guest.status, "archived");
@@ -338,31 +438,267 @@ try {
       .get(guestId)?.count,
     1,
   );
+  assert.equal(
+    (await request(`/reservations/${reservationId}/status`, "PATCH", { status: "confirmed" })).status,
+    409,
+  );
+  assert.equal((await request("/reservations", "POST", reservationInput)).status, 409);
   assert.equal((await request(`/guests/${guestId}`, "PATCH", { firstName: "Blocked" })).status, 409);
   const restoredGuest = await request(`/guests/${guestId}/restore`, "POST");
   assert.equal(restoredGuest.status, 200);
   assert.equal(restoredGuest.data.guest.status, "active");
   assert.equal((await request("/guests")).data.guests.length, 3);
 
-  database.$client
+  const updatedReservation = await request(`/reservations/${reservationId}`, "PUT", {
+    ...reservationInput,
+    nightlyRate: 175,
+    notes: "Updated synthetic note",
+  });
+  assert.equal(updatedReservation.status, 200);
+  assert.equal(updatedReservation.data.reservation.nightlyRateCents, 17500);
+  assert.equal(updatedReservation.data.reservation.totalAmountCents, 35000);
+  assert.equal(updatedReservation.data.reservation.notes, "Updated synthetic note");
+  assert.equal((await request(`/reservations/${backToBackId}`, "GET")).status, 200);
+  assert.equal((await request("/reservations?status=pending")).data.reservations.length, 2);
+  assert.equal((await request(`/reservations?q=${createdReservation.data.reservation.reservationReference}`)).data.total, 1);
+  assert.equal((await request(`/reservations?guestId=${guestId}`)).data.total, 1);
+  assert.equal((await request(`/reservations?propertyId=${propertyId}&unitId=${unitId}`)).data.total, 2);
+  assert.equal((await request("/reservations?status=invalid")).status, 400);
+
+  const overlappingEdit = await request(`/reservations/${backToBackId}`, "PUT", {
+    ...reservationInput,
+    guestId: sharedEmailGuest.data.guest.id,
+    checkIn: "2030-03-02",
+    checkOut: "2030-03-04",
+  });
+  assert.equal(overlappingEdit.status, 409);
+  const confirmedReservation = await request(
+    `/reservations/${reservationId}/status`,
+    "PATCH",
+    { status: "confirmed" },
+  );
+  assert.equal(confirmedReservation.status, 200);
+  assert.equal(confirmedReservation.data.reservation.status, "confirmed");
+  assert.equal((await request(`/reservations/${reservationId}/status`, "PATCH", { status: "pending" })).status, 400);
+  assert.equal((await request(`/reservations/${reservationId}/status`, "PATCH", { status: "completed", extra: true })).status, 400);
+
+  const cancelledBackToBack = await request(`/reservations/${backToBackId}`, "DELETE");
+  assert.equal(cancelledBackToBack.status, 200);
+  assert.equal(cancelledBackToBack.data.reservation.status, "cancelled");
+  const reusedCancelledDates = await request("/reservations", "POST", {
+    ...reservationInput,
+    guestId: sharedEmailGuest.data.guest.id,
+    checkIn: "2030-03-03",
+    checkOut: "2030-03-05",
+  });
+  assert.equal(reusedCancelledDates.status, 201);
+  const reusedCancelledId = reusedCancelledDates.data.reservation.id as number;
+  assert.equal((await request(`/reservations/${reusedCancelledId}`, "DELETE")).status, 200);
+
+  const completedReservation = await request(
+    `/reservations/${reservationId}/status`,
+    "PATCH",
+    { status: "completed" },
+  );
+  assert.equal(completedReservation.status, 200);
+  assert.equal(completedReservation.data.reservation.status, "completed");
+  assert.equal((await request(`/reservations/${reservationId}`, "PUT", reservationInput)).status, 409);
+  const rebookCompletedDates = await request("/reservations", "POST", reservationInput);
+  assert.equal(rebookCompletedDates.status, 201);
+  const rebookCompletedId = rebookCompletedDates.data.reservation.id as number;
+  assert.equal((await request(`/reservations/${rebookCompletedId}`, "DELETE")).status, 200);
+
+  const today = localDate(new Date());
+  const tomorrowDate = new Date();
+  tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+  const tomorrow = localDate(tomorrowDate);
+  const dayAfterTomorrowDate = new Date(tomorrowDate);
+  dayAfterTomorrowDate.setDate(dayAfterTomorrowDate.getDate() + 1);
+  const dayAfterTomorrow = localDate(dayAfterTomorrowDate);
+  const yesterdayDate = new Date();
+  yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+  const yesterday = localDate(yesterdayDate);
+  const emptyFrontDesk = await request(`/front-desk?date=${today}`);
+  assert.equal(emptyFrontDesk.data.frontDesk.summary.arrivalsToday, 0);
+  assert.equal(emptyFrontDesk.data.frontDesk.summary.checkedIn, 0);
+  assert.equal((await request(`/front-desk?date=${today}&date=${tomorrow}`)).status, 400);
+  const frontDeskInput = {
+    ...reservationInput,
+    guestId: sharedEmailGuest.data.guest.id as number,
+    checkIn: today,
+    checkOut: tomorrow,
+  };
+  const arrival = await request("/reservations", "POST", frontDeskInput);
+  assert.equal(arrival.status, 201);
+  const arrivalId = arrival.data.reservation.id as number;
+  assert.equal(arrival.data.reservation.stayStatus, "not_checked_in");
+  assert.equal(
+    (await request(`/reservations/${arrivalId}/check-in`, "POST")).status,
+    409,
+  );
+  assert.equal(
+    (await request(`/reservations/${arrivalId}/check-out`, "POST")).status,
+    409,
+  );
+  assert.equal(
+    (await request(`/reservations/${arrivalId}/status`, "PATCH", { status: "confirmed" })).status,
+    200,
+  );
+  assert.equal((await request("/front-desk?date=not-a-date")).status, 400);
+  assert.equal((await request("/front-desk?date=2030-02-30")).status, 400);
+  const arrivalDashboard = await request(`/front-desk?date=${today}`);
+  assert.equal(arrivalDashboard.status, 200);
+  assert.equal(arrivalDashboard.data.frontDesk.summary.arrivalsToday, 1);
+  assert.equal(arrivalDashboard.data.frontDesk.arrivals[0].id, arrivalId);
+
+  const checkInAttempts = await Promise.all([
+    request(`/reservations/${arrivalId}/check-in`, "POST"),
+    request(`/reservations/${arrivalId}/check-in`, "POST"),
+  ]);
+  assert.deepEqual(checkInAttempts.map((result) => result.status).sort(), [200, 409]);
+  const checkedIn = checkInAttempts.find((result) => result.status === 200);
+  assert.ok(checkedIn);
+  assert.equal(checkedIn.data.reservation.stayStatus, "checked_in");
+  assert.ok(checkedIn.data.reservation.actualCheckInAt);
+  const inHouseDashboard = await request(`/front-desk?date=${today}`);
+  assert.equal(inHouseDashboard.data.frontDesk.summary.checkedIn, 1);
+  assert.equal(inHouseDashboard.data.frontDesk.inHouse[0].id, arrivalId);
+  const departureDashboard = await request(`/front-desk?date=${tomorrow}`);
+  assert.equal(departureDashboard.data.frontDesk.summary.departuresToday, 1);
+  assert.equal(departureDashboard.data.frontDesk.departures[0].id, arrivalId);
+  assert.equal(
+    (await request(`/properties/${propertyId}/units/${unitId}/status`, "PATCH", {
+      status: "maintenance",
+    })).status,
+    409,
+  );
+  assert.equal((await request(`/reservations/${arrivalId}`, "DELETE")).status, 409);
+
+  const nextStay = await request("/reservations", "POST", {
+    ...frontDeskInput,
+    checkIn: tomorrow,
+    checkOut: dayAfterTomorrow,
+  });
+  assert.equal(nextStay.status, 201);
+  const nextStayId = nextStay.data.reservation.id as number;
+  assert.equal(
+    (await request(`/reservations/${nextStayId}/status`, "PATCH", { status: "confirmed" })).status,
+    200,
+  );
+  assert.throws(
+    () => checkInReservation(database, nextStayId, new Date(`${tomorrow}T12:00:00`)),
+    (error: unknown) => error instanceof HttpError && error.status === 409,
+  );
+  const checkedOut = await request(`/reservations/${arrivalId}/check-out`, "POST");
+  assert.equal(checkedOut.status, 200);
+  assert.equal(checkedOut.data.reservation.stayStatus, "checked_out");
+  assert.ok(checkedOut.data.reservation.actualCheckOutAt);
+  assert.equal(
+    (await request(`/reservations/${arrivalId}/check-out`, "POST")).status,
+    409,
+  );
+  const nextStayIn = checkInReservation(
+    database,
+    nextStayId,
+    new Date(`${tomorrow}T12:00:00`),
+  );
+  assert.equal(nextStayIn.stayStatus, "checked_in");
+  assert.equal(nextStayIn.unitId, unitId);
+  const nextStayOut = checkOutReservation(
+    database,
+    nextStayId,
+    new Date(`${tomorrow}T13:00:00`),
+  );
+  assert.equal(nextStayOut.stayStatus, "checked_out");
+  assert.equal(
+    (await request(`/front-desk?date=${tomorrow}`)).data.frontDesk.summary.checkedIn,
+    0,
+  );
+  assert.equal((await request(`/reservations/invalid/check-in`, "POST")).status, 400);
+  assert.equal((await request("/reservations/999999/check-in", "POST")).status, 404);
+  assert.equal((await request("/reservations/999999/check-out", "POST")).status, 404);
+  assert.equal(
+    database.$client
+      .prepare("SELECT COUNT(*) AS count FROM reservations WHERE unit_id = ? AND stay_status = 'checked_in'")
+      .get(unitId)?.count,
+    0,
+  );
+  assert.throws(() => {
+    database.$client
+      .prepare("UPDATE reservations SET stay_status = 'checked_in' WHERE id = ?")
+      .run(arrivalId);
+  }, /reservation_stay_conflict/);
+
+  const overdueUnit = await request(`/properties/${propertyId}/units`, "POST", {
+    name: "Front Desk Overdue Test Unit",
+    capacity: 2,
+    baseNightlyRate: 120,
+  });
+  assert.equal(overdueUnit.status, 201);
+  const overdueReservation = await request("/reservations", "POST", {
+    ...frontDeskInput,
+    unitId: overdueUnit.data.unit.id as number,
+    checkIn: yesterday,
+    checkOut: tomorrow,
+  });
+  assert.equal(overdueReservation.status, 201);
+  const overdueReservationId = overdueReservation.data.reservation.id as number;
+  assert.equal(
+    (await request(`/reservations/${overdueReservationId}/status`, "PATCH", { status: "confirmed" })).status,
+    200,
+  );
+  const overdueDashboard = await request(`/front-desk?date=${today}`);
+  assert.equal(overdueDashboard.data.frontDesk.summary.overdueArrivals, 1);
+  assert.equal(overdueDashboard.data.frontDesk.overdueArrivals[0].id, overdueReservationId);
+  assert.equal(
+    (await request(`/reservations/${overdueReservationId}/check-in`, "POST")).status,
+    200,
+  );
+  assert.equal(
+    (await request(`/reservations/${overdueReservationId}/check-out`, "POST")).status,
+    200,
+  );
+
+  const raceInput = {
+    ...reservationInput,
+    checkIn: "2030-06-01",
+    checkOut: "2030-06-03",
+  };
+  const raceResults = await Promise.all([
+    request("/reservations", "POST", raceInput),
+    request("/reservations", "POST", raceInput),
+  ]);
+  assert.deepEqual(raceResults.map((result) => result.status).sort(), [201, 409]);
+  const winningRace = raceResults.find((result) => result.status === 201);
+  assert.ok(winningRace);
+  assert.equal((await request(`/reservations/${winningRace.data.reservation.id}`, "DELETE")).status, 200);
+
+  const historyGuestResult = database.$client
     .prepare("INSERT INTO guests (first_name, last_name) VALUES (?, ?)")
     .run("Synthetic", "History Guest");
-  database.$client
-    .prepare(`
-      INSERT INTO reservations (property_id, guest_id, check_in, check_out)
-      VALUES (?, ?, ?, ?)
-    `)
-    .run(propertyId, 1, "2030-02-01", "2030-02-03");
+  const historyGuestId = Number(historyGuestResult.lastInsertRowid);
+  const reservationsBeforePropertyArchive = Number(
+    database.$client.prepare("SELECT COUNT(*) AS count FROM reservations WHERE property_id = ?")
+      .get(propertyId)?.count,
+  );
+  const historyReservation = await request("/reservations", "POST", {
+    guestId: historyGuestId,
+    unitId,
+    checkIn: "2030-02-01",
+    checkOut: "2030-02-03",
+    numberOfGuests: 1,
+  });
+  assert.equal(historyReservation.status, 201);
   const propertyArchivedWithHistory = await request(`/properties/${propertyId}`, "DELETE");
   assert.equal(propertyArchivedWithHistory.status, 200);
   assert.equal(
     database.$client.prepare("SELECT COUNT(*) AS count FROM reservations WHERE property_id = ?")
       .get(propertyId)?.count,
-    2,
+    reservationsBeforePropertyArchive + 1,
   );
   assert.equal(
     (await request(`/properties/${propertyId}/units?includeArchived=true`)).data.units.length,
-    2,
+    3,
   );
   assert.throws(() => {
     database.$client.prepare("DELETE FROM properties WHERE id = ?").run(propertyId);
@@ -381,7 +717,7 @@ try {
   }
   assert.equal(foreignKeyRejected, true);
 
-  console.log("Property, unit, and guest API integration tests passed.");
+  console.log("Property, unit, guest, and reservation API integration tests passed.");
 } finally {
   if (server?.listening) {
     await new Promise<void>((resolveClose, reject) => {
@@ -390,4 +726,12 @@ try {
   }
   database.$client.close();
   rmSync(testDirectory, { recursive: true, force: true });
+}
+
+function localDate(value: Date): string {
+  return [
+    value.getFullYear(),
+    String(value.getMonth() + 1).padStart(2, "0"),
+    String(value.getDate()).padStart(2, "0"),
+  ].join("-");
 }

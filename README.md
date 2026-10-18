@@ -19,7 +19,7 @@ npm run dev
 
 The client runs at <http://127.0.0.1:5173> and the API at <http://127.0.0.1:3000>. Both servers bind only to `127.0.0.1`; the Vite server proxies `/api` to the local API. The app does not call cloud services or external APIs. Loopback binding limits network exposure but is not complete security; authentication is not implemented in this phase, so protect access to the laptop and its user account.
 
-The SQLite database is stored at `data/pms.db`, outside the frontend's public directory. Set `PMS_DATABASE_PATH` to use another local file path (relative paths are resolved from the project root); paths inside `client/public` are rejected. The database and backup files are ignored by Git. Phase 2 and Phase 3 use additive migrations. Phase 3 adds guest address, country, and status fields, search indexes, and drops the legacy unique email index so family members can share an address. It preserves guest, reservation, property, and unit records.
+The SQLite database is stored at `data/pms.db`, outside the frontend's public directory. Set `PMS_DATABASE_PATH` to use another local file path (relative paths are resolved from the project root); paths inside `client/public` are rejected. The database and backup files are ignored by Git. Phase 2 through Phase 5 use additive migrations. Phase 4 extends the existing reservations table in place: legacy reservation IDs, dependent foreign keys, and history are preserved. Legacy reservations retain a null unit assignment because the previous schema did not track units; their reference and lifecycle state are backfilled. Phase 5 adds separate stay status and actual check-in/check-out timestamps to the existing reservations; existing rows start as not checked in, with actual timestamps left null.
 
 ## Available commands
 
@@ -31,7 +31,7 @@ The SQLite database is stored at `data/pms.db`, outside the frontend's public di
 | `npm run db:generate` | Generate a migration from the Drizzle schema |
 | `npm run db:migrate` | Apply pending migrations to the local database |
 | `npm run test:db` | Verify migrations and synthetic database read/write in a temporary database |
-| `npm run test:api` | Exercise property and unit endpoints against a temporary database |
+| `npm run test:api` | Exercise property, unit, guest, reservation, and front-desk endpoints against a temporary database |
 | `npm test` | Run database and API integration tests |
 
 ## Project layout
@@ -66,9 +66,21 @@ The Drizzle schema is in `server/src/db/schema.ts`; generated migrations and jou
 - `PUT /api/properties/:propertyId/units/:unitId` — update an unarchived unit
 - `DELETE /api/properties/:propertyId/units/:unitId` — archive a unit; does not delete it
 - `PATCH /api/properties/:propertyId/units/:unitId/status` — change status or restore an archived unit
+- `GET /api/front-desk?date=YYYY-MM-DD` — local arrivals, departures, in-house stays, and overdue arrivals for a date (defaults to the machine's local date)
+- `POST /api/reservations/:reservationId/check-in` — record an eligible guest check-in and its actual timestamp
+- `POST /api/reservations/:reservationId/check-out` — record a current guest check-out and its actual timestamp
+- `GET /api/reservations?status=pending&q=...&propertyId=...&unitId=...&guestId=...&checkInFrom=...&checkInTo=...` — search and filter reservations
+- `GET /api/reservations/:reservationId` — read reservation details
+- `GET /api/reservations/availability?unitId=...&checkIn=YYYY-MM-DD&checkOut=YYYY-MM-DD&numberOfGuests=...` — calculate an indicative quote and check unit availability
+- `POST /api/reservations` — create a pending reservation; the unit's base rate is used unless an override is supplied
+- `PUT /api/reservations/:reservationId` — edit a pending or confirmed reservation with eligibility and availability revalidated
+- `PATCH /api/reservations/:reservationId/status` — confirm, cancel, or complete a reservation using allowed lifecycle transitions
+- `DELETE /api/reservations/:reservationId` — safely cancel an active reservation; it does not delete history
+
+Reservations use half-open stay intervals (`check_in <= date < check_out`). Pending and confirmed reservations hold inventory; cancelled and completed records do not. Creation, confirmation, and edits validate unit/property/guest eligibility, capacity, and overlap inside a synchronous SQLite `BEGIN IMMEDIATE` transaction. Database triggers independently reject invalid relationships and conflicting active reservations. Check-in requires a confirmed reservation, an eligible date, and an active property, guest, and unit; an active stay occupies its assigned unit until check-out. Reservation lifecycle and occupancy status are distinct. Check-out does not automatically change unit status or mark it ready for another guest. SQLite's busy timeout is five seconds; a lock timeout is reported as a retryable `503`. Reservation references are generated locally and kept unique.
 
 ## Local data safety
 
 The SQLite database and backup directory are intentionally excluded from version control. Database and API tests use isolated temporary databases with synthetic data and do not write test records to the retained database. Keep independent backups of `data/` when retaining operational data matters.
 
-Guest profiles intentionally exclude government ID, passport, and payment-card details. Guest notes are stored as plain text. Guest archiving retains profile and reservation references; archived guests are filtered out by default and must be restored before future reservation workflows should select them. Reservations are not implemented in this phase.
+Guest profiles intentionally exclude government ID, passport, and payment-card details. Guest and reservation notes are stored as plain text. Guest archiving retains profile and reservation references; archived guests are filtered out by default and must be restored before a pending reservation can be confirmed. Reservation cancellation and completion retain history instead of deleting records. Loopback-only access is a network boundary, not complete security; authentication is not implemented, so protect access to the laptop and its user account.
