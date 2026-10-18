@@ -54,14 +54,18 @@ export const guests = sqliteTable(
     lastName: text("last_name").notNull(),
     email: text("email"),
     phone: text("phone"),
+    address: text("address"),
+    country: text("country"),
     notes: text("notes"),
+    status: text("status", { enum: ["active", "archived"] }).notNull().default("active"),
     createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
     updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   },
   (table) => [
-    uniqueIndex("guests_email_unique")
-      .on(table.email)
-      .where(sql`${table.email} IS NOT NULL AND ${table.email} <> ''`),
+    check("guests_status_check", sql`${table.status} IN ('active', 'archived')`),
+    index("guests_status_name_search").on(table.status, table.lastName, table.firstName),
+    index("guests_email_search").on(table.email),
+    index("guests_phone_search").on(table.phone),
   ],
 );
 
