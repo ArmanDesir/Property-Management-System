@@ -24,6 +24,7 @@ import {
   InvoiceDetailsPage,
   InvoiceFormPage,
 } from "./features/billing/BillingPages";
+import { ReportsPage } from "./features/reports/ReportsPage";
 import "./App.css";
 
 type HealthStatus = "checking" | "online" | "offline";
@@ -47,6 +48,7 @@ type Route =
   | { name: "new-invoice" }
   | { name: "invoice-details"; invoiceId: number }
   | { name: "edit-invoice"; invoiceId: number }
+  | { name: "reports" }
   | { name: "new-reservation" }
   | { name: "reservation-details"; reservationId: number }
   | { name: "edit-reservation"; reservationId: number }
@@ -107,6 +109,7 @@ function App() {
   const isReservationsRoute =
     route.name.includes("reservation") || route.name === "reservations";
   const isBillingRoute = route.name === "billing" || route.name.includes("invoice");
+  const isReportsRoute = route.name === "reports";
 
   return (
     <main className="shell">
@@ -173,6 +176,13 @@ function App() {
             onClick={linkClick("/billing", navigate)}
           >
             Billing
+          </a>
+          <a
+            href="/reports"
+            className={isReportsRoute ? "nav-link active" : "nav-link"}
+            onClick={linkClick("/reports", navigate)}
+          >
+            Reports
           </a>
         </nav>
         <div className="local-badge">
@@ -246,6 +256,7 @@ function App() {
       {route.name === "front-desk" && <FrontDeskPage {...pageProps} />}
       {route.name === "housekeeping" && <HousekeepingPage {...pageProps} />}
       {route.name === "billing" && <BillingPage {...pageProps} />}
+      {route.name === "reports" && <ReportsPage navigate={navigate} />}
       {route.name === "new-invoice" && (
         <InvoiceFormPage key={locationSearch} {...pageProps} />
       )}
@@ -376,8 +387,14 @@ function Dashboard({ navigate }: { navigate: (path: string) => void }) {
               "Track unit cleaning and maintenance availability.",
               "✳",
             ],
+            [
+              "07",
+              "Reports",
+              "Review reservations, occupancy, housekeeping, and billing trends.",
+              "▤",
+            ],
           ].map(([number, title, description, icon]) =>
-            title === "Guests" || title === "Reservations" || title === "Front Desk" || title === "Housekeeping" || title === "Billing" ? (
+            title === "Guests" || title === "Reservations" || title === "Front Desk" || title === "Housekeeping" || title === "Billing" || title === "Reports" ? (
               <button
                 className="area-card area-card-button"
                 key={title}
@@ -390,7 +407,9 @@ function Dashboard({ navigate }: { navigate: (path: string) => void }) {
                         ? "/front-desk"
                         : title === "Housekeeping"
                           ? "/housekeeping"
-                          : "/billing",
+                          : title === "Billing"
+                            ? "/billing"
+                            : "/reports",
                 )}
               >
                 <span className="card-top">
@@ -435,6 +454,7 @@ function resolveRoute(path: string): Route {
   if (path === "/front-desk") return { name: "front-desk" };
   if (path === "/housekeeping") return { name: "housekeeping" };
   if (path === "/billing") return { name: "billing" };
+  if (path === "/reports") return { name: "reports" };
   if (path === "/billing/new") return { name: "new-invoice" };
   if (path === "/reservations/new") return { name: "new-reservation" };
 

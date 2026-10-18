@@ -8,6 +8,7 @@ import { createHousekeepingRouter } from "./routes/housekeeping.js";
 import { createInvoicesRouter } from "./routes/invoices.js";
 import { createPropertiesRouter } from "./routes/properties.js";
 import { createReservationsRouter } from "./routes/reservations.js";
+import { createReportsRouter } from "./routes/reports.js";
 
 export function createApp(database: PmsDatabase) {
   const app = express();
@@ -20,6 +21,7 @@ export function createApp(database: PmsDatabase) {
   app.use("/api/guests", createGuestsRouter(database));
   app.use("/api/properties", createPropertiesRouter(database));
   app.use("/api/reservations", createReservationsRouter(database));
+  app.use("/api/reports", createReportsRouter(database));
   app.use(errorHandler);
 
   return app;

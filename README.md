@@ -33,7 +33,8 @@ The SQLite database is stored at `data/pms.db`, outside the frontend's public di
 | `npm run test:db` | Verify migrations and synthetic database read/write in a temporary database |
 | `npm run test:api` | Exercise property, unit, guest, reservation, front-desk, and housekeeping endpoints against a temporary database |
 | `npm run test:billing` | Exercise invoice and manual-payment endpoints against a temporary database |
-| `npm test` | Run migration, API regression, and billing integration tests |
+| `npm run test:reports` | Exercise read-only reports against a temporary database with synthetic data |
+| `npm test` | Run migration, API regression, billing, and reports integration tests |
 
 ## Project layout
 
@@ -78,6 +79,11 @@ The Drizzle schema is in `server/src/db/schema.ts`; generated migrations and jou
 - `POST /api/invoices/:invoiceId/issue` — issue and lock a draft invoice snapshot
 - `POST /api/invoices/:invoiceId/void` — void an unpaid issued invoice; invoices with payments cannot be voided
 - `POST /api/invoices/:invoiceId/payments` — record a manual bookkeeping payment with an idempotency key
+- `GET /api/reports/summary?from=YYYY-MM-DD&to=YYYY-MM-DD&propertyId=...` — current operating metrics and selected-period summary
+- `GET /api/reports/reservations?from=YYYY-MM-DD&to=YYYY-MM-DD&propertyId=...` — planned arrival/departure and reservation status breakdowns
+- `GET /api/reports/occupancy?from=YYYY-MM-DD&to=YYYY-MM-DD&propertyId=...` — eligible unit-night occupancy, aggregated by date
+- `GET /api/reports/housekeeping?from=YYYY-MM-DD&to=YYYY-MM-DD&propertyId=...` — current unit status counts and most-recent clean timestamps in range
+- `GET /api/reports/billing?from=YYYY-MM-DD&to=YYYY-MM-DD&propertyId=...` — issue-date invoice totals, recorded payments, statuses, and current balances
 - `GET /api/front-desk?date=YYYY-MM-DD` — local arrivals, departures, in-house stays, and overdue arrivals for a date (defaults to the machine's local date)
 - `POST /api/reservations/:reservationId/check-in` — record an eligible guest check-in and its actual timestamp
 - `POST /api/reservations/:reservationId/check-out` — record a current guest check-out and its actual timestamp
@@ -92,6 +98,8 @@ The Drizzle schema is in `server/src/db/schema.ts`; generated migrations and jou
 Reservations use half-open stay intervals (`check_in <= date < check_out`). Pending and confirmed reservations hold inventory; cancelled and completed records do not. Creation, confirmation, and edits validate unit/property/guest eligibility, capacity, and overlap inside a synchronous SQLite `BEGIN IMMEDIATE` transaction. Database triggers independently reject invalid relationships and conflicting active reservations. Check-in requires a confirmed reservation, an eligible date, and an active property, guest, and unit; an active stay occupies its assigned unit until check-out. Reservation lifecycle, occupancy, housekeeping, and operational unit status are distinct. Housekeeping progresses through dirty → cleaning → clean, with cleaning able to return to dirty; clean records the completion timestamp. Cleaning actions cannot mark an occupied unit clean or start cleaning it, and do not change the unit's operational status. A checked-out stay marks its unit dirty atomically while retaining the reservation and checkout timestamp. A unit under maintenance remains unavailable after housekeeping is completed; housekeeping status does not override reservation availability or overlap rules. SQLite's busy timeout is five seconds; a lock timeout is reported as a retryable `503`. Reservation references are generated locally and kept unique.
 
 Billing requires a user to explicitly select an existing reservation; no invoice is created automatically. Draft charges use integer minor currency units, whole-number quantities, and a manually entered tax rate in basis points. The API computes totals and rounds tax to the nearest cent, half up. Invoice currency is inherited from the reservation without conversion. Issued invoice lines and totals are immutable; `partially_paid` and `paid` are derived from recorded payment totals. Payments are bookkeeping records only (no gateway, bank integration, refunds, or reversals); they are idempotent, cannot exceed the outstanding balance, and are retained as immutable history. The existing `billing_entries` table is legacy storage and is not used by the invoice workflow.
+
+Reports are read-only and use inclusive `from`/`to` calendar dates with a maximum range of 366 days. Reservation arrivals and departures use planned check-in/check-out dates; checked-in summary counts use actual stay status. Occupancy follows existing inventory rules: pending and confirmed reservations hold planned unit-nights, while completed reservations represent historical stays. Actual stay timestamps are used when present and planned intervals otherwise; planned nights do not prove that a guest arrived. The report excludes currently inactive, archived, maintenance, or archived-property inventory and de-duplicates overlapping unit-nights. Historical unit eligibility is unavailable, so current eligibility is applied across the selected period. Housekeeping status is a current snapshot; cleaning-date counts use each unit's most recent `last_cleaned_at` timestamp and are not a complete historical cleaning log. Invoice totals use invoice `issue_date`, payments use `payment_date`, and balances/status counts are current. Monetary totals stay grouped by currency; invoice totals are not presented as collected money. Reports do not persist analytics, alter PMS records, or create synthetic data.
 
 ## Local data safety
 

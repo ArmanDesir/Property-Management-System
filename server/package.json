@@ -15,7 +15,8 @@
     "db:migrate": "tsx src/db/migrate.ts",
     "test:db": "tsx scripts/test-db.ts",
     "test:api": "tsx scripts/test-api.ts",
-    "test:billing": "tsx scripts/test-billing.ts"
+    "test:billing": "tsx scripts/test-billing.ts",
+    "test:reports": "tsx scripts/test-reports.ts"
   },
   "dependencies": {
     "drizzle-orm": "^0.45.4",
