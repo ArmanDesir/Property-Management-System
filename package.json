@@ -20,5 +20,10 @@
   "devDependencies": {
     "concurrently": "^9.1.2",
     "drizzle-orm": "^0.45.4"
+  },
+  "overrides": {
+    "@esbuild-kit/core-utils": {
+      "esbuild": "^0.25.12"
+    }
   }
 }

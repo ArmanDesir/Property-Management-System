@@ -42,8 +42,13 @@ export function createDatabase(
         return { rows: row ? Object.values(row) : [] };
       }
 
-      statement.run(...params);
-      return { rows: [] };
+      const result = statement.run(...params);
+      return {
+        rows: [{
+          changes: result.changes,
+          lastInsertRowid: result.lastInsertRowid,
+        }],
+      };
     },
     { schema },
   );
