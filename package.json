@@ -17,7 +17,8 @@
     "db:generate": "npm run db:generate --workspace server",
     "test:db": "npm run test:db --workspace server",
     "test:api": "npm run test:api --workspace server",
-    "test": "npm run test:db && npm run test:api"
+    "test:billing": "npm run test:billing --workspace server",
+    "test": "npm run test:db && npm run test:api && npm run test:billing"
   },
   "devDependencies": {
     "concurrently": "^9.1.2",

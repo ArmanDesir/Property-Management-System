@@ -169,6 +169,92 @@ export const billingEntries = sqliteTable(
   ],
 );
 
+export const invoices = sqliteTable(
+  "invoices",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    invoiceNumber: text("invoice_number").notNull(),
+    reservationId: integer("reservation_id")
+      .notNull()
+      .references(() => reservations.id, { onDelete: "restrict" }),
+    issueDate: text("issue_date").notNull(),
+    dueDate: text("due_date"),
+    currency: text("currency").notNull(),
+    status: text("status", { enum: ["draft", "issued", "void"] })
+      .notNull()
+      .default("draft"),
+    taxRateBps: integer("tax_rate_bps").notNull().default(0),
+    subtotalCents: integer("subtotal_cents").notNull().default(0),
+    taxAmountCents: integer("tax_amount_cents").notNull().default(0),
+    totalCents: integer("total_cents").notNull().default(0),
+    notes: text("notes"),
+    issuedAt: text("issued_at"),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    check("invoices_status_check", sql`${table.status} IN ('draft', 'issued', 'void')`),
+    check("invoices_currency_check", sql`${table.currency} GLOB '[A-Z][A-Z][A-Z]'`),
+    check("invoices_tax_rate_check", sql`${table.taxRateBps} BETWEEN 0 AND 10000`),
+    check("invoices_subtotal_nonnegative", sql`${table.subtotalCents} >= 0`),
+    check("invoices_tax_nonnegative", sql`${table.taxAmountCents} >= 0`),
+    check("invoices_total_nonnegative", sql`${table.totalCents} >= 0`),
+    uniqueIndex("invoices_invoice_number_unique").on(table.invoiceNumber),
+    index("invoices_reservation").on(table.reservationId),
+    index("invoices_status_issue_date").on(table.status, table.issueDate),
+  ],
+);
+
+export const invoiceLineItems = sqliteTable(
+  "invoice_line_items",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    invoiceId: integer("invoice_id")
+      .notNull()
+      .references(() => invoices.id, { onDelete: "restrict" }),
+    description: text("description").notNull(),
+    quantity: integer("quantity").notNull(),
+    unitPriceCents: integer("unit_price_cents").notNull(),
+    lineTotalCents: integer("line_total_cents").notNull(),
+    position: integer("position").notNull(),
+  },
+  (table) => [
+    check("invoice_line_items_quantity_positive", sql`${table.quantity} > 0`),
+    check("invoice_line_items_price_nonnegative", sql`${table.unitPriceCents} >= 0`),
+    check("invoice_line_items_total_nonnegative", sql`${table.lineTotalCents} >= 0`),
+    check("invoice_line_items_position_nonnegative", sql`${table.position} >= 0`),
+    index("invoice_line_items_invoice_position").on(table.invoiceId, table.position),
+  ],
+);
+
+export const payments = sqliteTable(
+  "payments",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    invoiceId: integer("invoice_id")
+      .notNull()
+      .references(() => invoices.id, { onDelete: "restrict" }),
+    paymentDate: text("payment_date").notNull(),
+    amountCents: integer("amount_cents").notNull(),
+    method: text("method", {
+      enum: ["cash", "bank_transfer", "card_terminal", "other"],
+    }).notNull(),
+    reference: text("reference"),
+    note: text("note"),
+    idempotencyKey: text("idempotency_key").notNull(),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    check("payments_amount_positive", sql`${table.amountCents} > 0`),
+    check(
+      "payments_method_check",
+      sql`${table.method} IN ('cash', 'bank_transfer', 'card_terminal', 'other')`,
+    ),
+    uniqueIndex("payments_idempotency_key_unique").on(table.idempotencyKey),
+    index("payments_invoice_date").on(table.invoiceId, table.paymentDate, table.id),
+  ],
+);
+
 export const housekeepingTasks = sqliteTable(
   "housekeeping_tasks",
   {

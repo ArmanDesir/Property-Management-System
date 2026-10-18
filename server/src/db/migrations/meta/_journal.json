@@ -43,6 +43,13 @@
       "when": 1792308000000,
       "tag": "0005_housekeeping",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1792329854649,
+      "tag": "0006_billing_invoicing",
+      "breakpoints": true
     }
   ]
 }

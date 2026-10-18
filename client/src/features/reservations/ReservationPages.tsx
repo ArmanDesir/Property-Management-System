@@ -8,6 +8,11 @@ import { apiRequest } from "../../lib/api";
 import type { GuestListItem } from "../guests/api";
 import type { Property, Unit } from "../properties/api";
 import {
+  fetchInvoices,
+  formatInvoiceMoney,
+  type InvoiceSummary,
+} from "../billing/api";
+import {
   fetchReservations,
   formatReservationMoney,
   type AvailabilityQuote,
@@ -525,6 +530,9 @@ export function ReservationDetailsPage({
   const [reservation, setReservation] = useState<Reservation | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [invoiceError, setInvoiceError] = useState("");
+  const [invoices, setInvoices] = useState<InvoiceSummary[]>([]);
+  const [invoicesLoading, setInvoicesLoading] = useState(true);
   const [confirmStatus, setConfirmStatus] = useState<Exclude<ReservationStatus, "pending"> | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -539,6 +547,23 @@ export function ReservationDetailsPage({
       })
       .finally(() => {
         if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [reservationId]);
+
+  useEffect(() => {
+    let active = true;
+    fetchInvoices({ status: "all", q: "", reservationId })
+      .then(({ invoices: records }) => {
+        if (active) setInvoices(records);
+      })
+      .catch((reason: unknown) => {
+        if (active) setInvoiceError(errorMessage(reason));
+      })
+      .finally(() => {
+        if (active) setInvoicesLoading(false);
       });
     return () => {
       active = false;
@@ -627,6 +652,30 @@ export function ReservationDetailsPage({
               <button className="text-button" onClick={() => navigate(`/properties/${reservation.propertyId}/units/${reservation.unitId}`)}>Open unit ↗</button>
             )}
           </div>
+        </InfoCard>
+        <InfoCard label="Invoices">
+          <div className="reservation-related-links">
+            <button className="text-button" onClick={() => navigate(`/billing/new?reservationId=${reservation.id}`)}>
+              Create invoice for this reservation ↗
+            </button>
+          </div>
+          {invoicesLoading && <p className="reservation-notes">Loading invoices…</p>}
+          {invoiceError && <p className="reservation-notes">{invoiceError}</p>}
+          {!invoicesLoading && !invoiceError && invoices.length === 0 && (
+            <p className="reservation-notes">No invoices are linked to this reservation.</p>
+          )}
+          {invoices.map((invoice) => (
+            <div className="reservation-invoice-row" key={invoice.id}>
+              <button className="text-button" onClick={() => navigate(`/billing/${invoice.id}`)}>
+                {invoice.invoiceNumber} · {invoice.status.replaceAll("_", " ")}
+              </button>
+              <span>
+                {formatInvoiceMoney(invoice.totalCents, invoice.currency)} total ·{" "}
+                {formatInvoiceMoney(invoice.paidCents, invoice.currency)} paid ·{" "}
+                {formatInvoiceMoney(invoice.balanceCents, invoice.currency)} balance
+              </span>
+            </div>
+          ))}
         </InfoCard>
         <InfoCard label="Notes">
           <p className="reservation-notes">{reservation.notes || "No reservation notes."}</p>

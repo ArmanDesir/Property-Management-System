@@ -336,7 +336,47 @@ try {
     });
     assert.equal(
       prePhase5Database.$client.prepare("SELECT COUNT(*) AS count FROM __drizzle_migrations").get()?.count,
-      6,
+      7,
+    );
+    assert.equal(
+      prePhase5Database.$client.prepare("SELECT COUNT(*) AS count FROM invoices").get()?.count,
+      0,
+    );
+    assert.equal(
+      prePhase5Database.$client.prepare("SELECT COUNT(*) AS count FROM payments").get()?.count,
+      0,
+    );
+    assert.equal(
+      prePhase5Database.$client.prepare("SELECT COUNT(*) AS count FROM billing_entries").get()?.count,
+      0,
+    );
+    assert.ok(
+      prePhase5Database.$client.prepare("PRAGMA foreign_key_list(invoices)").all()
+        .some((foreignKey) =>
+          foreignKey.table === "reservations" &&
+          foreignKey.from === "reservation_id" &&
+          foreignKey.on_delete === "RESTRICT"
+        ),
+    );
+    assert.ok(
+      prePhase5Database.$client.prepare("PRAGMA foreign_key_list(invoice_line_items)").all()
+        .some((foreignKey) =>
+          foreignKey.table === "invoices" &&
+          foreignKey.from === "invoice_id" &&
+          foreignKey.on_delete === "RESTRICT"
+        ),
+    );
+    assert.ok(
+      prePhase5Database.$client.prepare("PRAGMA foreign_key_list(payments)").all()
+        .some((foreignKey) =>
+          foreignKey.table === "invoices" &&
+          foreignKey.from === "invoice_id" &&
+          foreignKey.on_delete === "RESTRICT"
+        ),
+    );
+    assert.ok(
+      prePhase5Database.$client.prepare("PRAGMA index_list(payments)").all()
+        .some((index) => index.name === "payments_idempotency_key_unique" && index.unique === 1),
     );
     assert.deepEqual(prePhase5Database.$client.prepare("PRAGMA foreign_key_check").all(), []);
   } finally {

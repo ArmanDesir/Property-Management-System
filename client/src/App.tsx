@@ -19,6 +19,11 @@ import {
 } from "./features/reservations/ReservationPages";
 import { FrontDeskPage } from "./features/front-desk/FrontDeskPage";
 import { HousekeepingPage } from "./features/housekeeping/HousekeepingPage";
+import {
+  BillingPage,
+  InvoiceDetailsPage,
+  InvoiceFormPage,
+} from "./features/billing/BillingPages";
 import "./App.css";
 
 type HealthStatus = "checking" | "online" | "offline";
@@ -38,6 +43,10 @@ type Route =
   | { name: "reservations" }
   | { name: "front-desk" }
   | { name: "housekeeping" }
+  | { name: "billing" }
+  | { name: "new-invoice" }
+  | { name: "invoice-details"; invoiceId: number }
+  | { name: "edit-invoice"; invoiceId: number }
   | { name: "new-reservation" }
   | { name: "reservation-details"; reservationId: number }
   | { name: "edit-reservation"; reservationId: number }
@@ -97,6 +106,7 @@ function App() {
   const isGuestsRoute = route.name.includes("guest") || route.name === "guests";
   const isReservationsRoute =
     route.name.includes("reservation") || route.name === "reservations";
+  const isBillingRoute = route.name === "billing" || route.name.includes("invoice");
 
   return (
     <main className="shell">
@@ -156,6 +166,13 @@ function App() {
             onClick={linkClick("/reservations", navigate)}
           >
             Reservations
+          </a>
+          <a
+            href="/billing"
+            className={isBillingRoute ? "nav-link active" : "nav-link"}
+            onClick={linkClick("/billing", navigate)}
+          >
+            Billing
           </a>
         </nav>
         <div className="local-badge">
@@ -228,6 +245,16 @@ function App() {
       )}
       {route.name === "front-desk" && <FrontDeskPage {...pageProps} />}
       {route.name === "housekeeping" && <HousekeepingPage {...pageProps} />}
+      {route.name === "billing" && <BillingPage {...pageProps} />}
+      {route.name === "new-invoice" && (
+        <InvoiceFormPage key={locationSearch} {...pageProps} />
+      )}
+      {route.name === "invoice-details" && (
+        <InvoiceDetailsPage {...pageProps} invoiceId={route.invoiceId} />
+      )}
+      {route.name === "edit-invoice" && (
+        <InvoiceFormPage {...pageProps} invoiceId={route.invoiceId} />
+      )}
       {route.name === "new-reservation" && (
         <ReservationFormPage key={locationSearch} {...pageProps} />
       )}
@@ -340,7 +367,7 @@ function Dashboard({ navigate }: { navigate: (path: string) => void }) {
             [
               "05",
               "Billing",
-              "Billing tools are planned for a future phase.",
+              "Create reservation invoices and track manually recorded payments.",
               "↗",
             ],
             [
@@ -350,7 +377,7 @@ function Dashboard({ navigate }: { navigate: (path: string) => void }) {
               "✳",
             ],
           ].map(([number, title, description, icon]) =>
-            title === "Guests" || title === "Reservations" || title === "Front Desk" || title === "Housekeeping" ? (
+            title === "Guests" || title === "Reservations" || title === "Front Desk" || title === "Housekeeping" || title === "Billing" ? (
               <button
                 className="area-card area-card-button"
                 key={title}
@@ -361,7 +388,9 @@ function Dashboard({ navigate }: { navigate: (path: string) => void }) {
                       ? "/reservations"
                       : title === "Front Desk"
                         ? "/front-desk"
-                        : "/housekeeping",
+                        : title === "Housekeeping"
+                          ? "/housekeeping"
+                          : "/billing",
                 )}
               >
                 <span className="card-top">
@@ -405,9 +434,17 @@ function resolveRoute(path: string): Route {
   if (path === "/reservations") return { name: "reservations" };
   if (path === "/front-desk") return { name: "front-desk" };
   if (path === "/housekeeping") return { name: "housekeeping" };
+  if (path === "/billing") return { name: "billing" };
+  if (path === "/billing/new") return { name: "new-invoice" };
   if (path === "/reservations/new") return { name: "new-reservation" };
 
-  let match = path.match(/^\/guests\/(\d+)\/edit$/);
+  let match = path.match(/^\/billing\/(\d+)\/edit$/);
+  if (match) return { name: "edit-invoice", invoiceId: Number(match[1]) };
+
+  match = path.match(/^\/billing\/(\d+)$/);
+  if (match) return { name: "invoice-details", invoiceId: Number(match[1]) };
+
+  match = path.match(/^\/guests\/(\d+)\/edit$/);
   if (match) return { name: "edit-guest", guestId: Number(match[1]) };
 
   match = path.match(/^\/guests\/(\d+)$/);

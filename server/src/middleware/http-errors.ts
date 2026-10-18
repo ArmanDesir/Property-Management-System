@@ -25,10 +25,17 @@ export const errorHandler: ErrorRequestHandler = (error: unknown, _request, resp
   }
 
   if (isDatabaseError(error, "SQLITE_CONSTRAINT_UNIQUE", 2067)) {
+    const message = databaseErrorMessage(error);
     response.status(409).json({
-      error: databaseErrorMessage(error).includes("reservations.reservation_reference")
+      error: message.includes("reservations.reservation_reference")
         ? "A reservation reference collision occurred; retry the request."
-        : "A unit with this name already exists in this property.",
+        : message.includes("invoices.invoice_number")
+          ? "An invoice number collision occurred; retry the request."
+          : message.includes("payments.idempotency_key")
+            ? "This payment submission has already been recorded."
+            : message.includes("units.property_id")
+              ? "A unit with this name already exists in this property."
+              : "A record with that unique value already exists.",
     });
     return;
   }
@@ -45,6 +52,42 @@ export const errorHandler: ErrorRequestHandler = (error: unknown, _request, resp
       response.status(409).json({
         error: "This unit cannot be deactivated, archived, or put into maintenance while a guest is checked in.",
       });
+      return;
+    }
+    if (triggerMessage.includes("invoice_transition_conflict")) {
+      response.status(409).json({ error: "This invoice status transition is not allowed." });
+      return;
+    }
+    if (triggerMessage.includes("invoice_issue_conflict")) {
+      response.status(409).json({ error: "Invoice lines and totals must be valid before issuing." });
+      return;
+    }
+    if (triggerMessage.includes("invoice_has_payments")) {
+      response.status(409).json({
+        error: "Invoices with recorded payments cannot be voided; refunds and reversals are not supported.",
+      });
+      return;
+    }
+    if (
+      triggerMessage.includes("invoice_snapshot_immutable") ||
+      triggerMessage.includes("invoice_items_immutable") ||
+      triggerMessage.includes("invoice_number_immutable")
+    ) {
+      response.status(409).json({ error: "Issued invoice details and payment history are immutable." });
+      return;
+    }
+    if (triggerMessage.includes("payment_invoice_conflict")) {
+      response.status(409).json({
+        error: "Payment could not be recorded because the invoice status or outstanding balance changed.",
+      });
+      return;
+    }
+    if (triggerMessage.includes("payment_history_immutable")) {
+      response.status(409).json({ error: "Recorded payment history cannot be changed or deleted." });
+      return;
+    }
+    if (triggerMessage.includes("invoice_history_preserved")) {
+      response.status(409).json({ error: "Invoice history cannot be deleted." });
       return;
     }
     if (triggerMessage.includes("reservation_has_active_stay")) {
@@ -80,7 +123,7 @@ export const errorHandler: ErrorRequestHandler = (error: unknown, _request, resp
     isDatabaseError(error, "SQLITE_LOCKED", 6)
   ) {
     response.status(503).json({
-      error: "The local database is busy. Retry the reservation request.",
+      error: "The local database is busy. Retry the request.",
     });
     return;
   }
