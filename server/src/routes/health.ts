@@ -1,7 +1,7 @@
 import { Router } from "express";
-import type Database from "better-sqlite3";
+import type { DatabaseSync } from "node:sqlite";
 
-export function createHealthRouter(database: Database.Database): Router {
+export function createHealthRouter(database: DatabaseSync): Router {
   const router = Router();
 
   router.get("/", (_request, response) => {

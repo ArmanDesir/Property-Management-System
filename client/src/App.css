@@ -1,7 +1,7 @@
 #root { min-height: 100vh; }
 .shell { width: min(1160px, calc(100% - 72px)); margin: 0 auto; }
 .topbar { height: 82px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #e2e7df; }
-.brand { display: inline-flex; align-items: center; gap: 10px; font: 800 19px "Manrope", sans-serif; letter-spacing: -1px; }
+.brand { display: inline-flex; align-items: center; gap: 10px; font: 800 19px "Segoe UI", Arial, sans-serif; letter-spacing: -1px; }
 .brand-mark { display: grid; place-items: center; width: 31px; height: 31px; border-radius: 10px 10px 10px 3px; color: #f7f8f3; background: #294b3b; font-size: 16px; }
 .brand-light { font-weight: 500; color: #718075; }
 .local-badge { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #66736a; }
@@ -10,10 +10,10 @@
 .status-dot.offline { background: #bb655a; }
 .hero { min-height: 437px; display: grid; grid-template-columns: 1fr 1fr; align-items: center; padding: 46px 4.5% 50px; overflow: hidden; }
 .hero-copy { position: relative; z-index: 1; }
-.eyebrow { display: flex; align-items: center; gap: 8px; color: #708174; font: 700 10px "Manrope", sans-serif; letter-spacing: 1.6px; }
+.eyebrow { display: flex; align-items: center; gap: 8px; color: #708174; font: 700 10px "Segoe UI", Arial, sans-serif; letter-spacing: 1.6px; }
 .eyebrow > span { width: 17px; height: 1px; background: #9daa9d; }
 h1, h2, h3, p { margin-top: 0; }
-h1 { margin: 23px 0 17px; font: 600 clamp(44px, 5.1vw, 66px)/1.06 "Manrope", sans-serif; letter-spacing: -4px; }
+h1 { margin: 23px 0 17px; font: 600 clamp(44px, 5.1vw, 66px)/1.06 "Segoe UI", Arial, sans-serif; letter-spacing: -4px; }
 h1 em { color: #6e9278; font-weight: 500; }
 .hero-description { max-width: 392px; color: #768077; font-size: 14px; line-height: 1.8; }
 .primary-link { display: inline-flex; align-items: center; gap: 24px; margin-top: 16px; padding: 13px 17px; border-radius: 5px; background: #294b3b; color: white; font-size: 12px; transition: background .2s, transform .2s; }
@@ -35,18 +35,18 @@ h1 em { color: #6e9278; font-weight: 500; }
 .workspace { padding: 22px 0 63px; }
 .section-heading { display: flex; justify-content: space-between; align-items: end; margin: 0 0 20px; }
 .section-heading .eyebrow { margin-bottom: 10px; }
-h2 { margin: 0; font: 600 24px "Manrope", sans-serif; letter-spacing: -1px; }
+h2 { margin: 0; font: 600 24px "Segoe UI", Arial, sans-serif; letter-spacing: -1px; }
 .section-aside { margin: 0 0 2px; color: #889189; font-size: 11px; line-height: 1.7; }
 .area-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
 .area-card { position: relative; min-height: 173px; padding: 16px 15px; border: 1px solid #e5e9e1; border-radius: 5px; background: #fbfcf9; transition: border-color .2s, transform .2s, box-shadow .2s; }
 .area-card:hover { transform: translateY(-3px); border-color: #c4d2c4; box-shadow: 0 8px 24px #3142330b; }
 .card-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
 .area-icon { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 8px; background: #edf2eb; color: #55735d; font-size: 17px; }
-.area-number { color: #aeb7ac; font: 500 10px "Manrope", sans-serif; }
-h3 { margin: 0 0 7px; font: 700 13px "Manrope", sans-serif; }
+.area-number { color: #aeb7ac; font: 500 10px "Segoe UI", Arial, sans-serif; }
+h3 { margin: 0 0 7px; font: 700 13px "Segoe UI", Arial, sans-serif; }
 .area-card p { max-width: 160px; margin: 0; color: #879087; font-size: 10px; line-height: 1.7; }
 .card-arrow { position: absolute; right: 14px; bottom: 13px; color: #849588; font-size: 13px; }
 footer { min-height: 52px; display: flex; align-items: center; justify-content: space-between; border-top: 1px solid #e2e7df; color: #9aa39a; font-size: 10px; }
-footer span:first-child { font: 700 9px "Manrope", sans-serif; letter-spacing: 1.3px; }
+footer span:first-child { font: 700 9px "Segoe UI", Arial, sans-serif; letter-spacing: 1.3px; }
 @media (max-width: 850px) { .area-grid { grid-template-columns: repeat(3, 1fr); } }
 @media (max-width: 620px) { .shell { width: min(100% - 36px, 480px); } .topbar { height: 68px; } .hero { grid-template-columns: 1fr; padding: 49px 0 25px; } h1 { font-size: 54px; } .hero-art { min-height: 275px; } .sun { right: 13%; width: 210px; height: 210px; } .art-card { transform: scale(.86); margin-right: 0; } .art-note { right: 0; bottom: 22px; } .workspace { padding-top: 30px; } .area-grid { grid-template-columns: repeat(2, 1fr); } .section-aside { display: none; } .area-card { min-height: 165px; } footer { font-size: 9px; } }

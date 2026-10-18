@@ -4,7 +4,7 @@ A local-first property management system starter built with React, Vite, TypeScr
 
 ## Requirements
 
-- Node.js 20.19+ or 22.12+
+- Node.js 22.13+
 - npm 10+
 
 ## Getting started
