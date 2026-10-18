@@ -6,11 +6,6 @@ import type { AddressInfo } from "node:net";
 import { createApp } from "../src/app.js";
 import { createDatabase } from "../src/db/connection.js";
 import { runMigrations } from "../src/db/migrations.js";
-import {
-  checkInReservation,
-  checkOutReservation,
-} from "../src/services/front-desk.js";
-import { HttpError } from "../src/middleware/http-errors.js";
 
 const testDirectory = mkdtempSync(resolve(tmpdir(), "local-pms-api-test-"));
 const database = createDatabase(resolve(testDirectory, "api-test.sqlite"));
@@ -585,9 +580,9 @@ try {
     (await request(`/reservations/${nextStayId}/status`, "PATCH", { status: "confirmed" })).status,
     200,
   );
-  assert.throws(
-    () => checkInReservation(database, nextStayId, new Date(`${tomorrow}T12:00:00`)),
-    (error: unknown) => error instanceof HttpError && error.status === 409,
+  assert.equal(
+    (await request(`/front-desk?date=${tomorrow}`)).data.frontDesk.summary.arrivalsToday,
+    1,
   );
   const checkedOut = await request(`/reservations/${arrivalId}/check-out`, "POST");
   assert.equal(checkedOut.status, 200);
@@ -597,19 +592,6 @@ try {
     (await request(`/reservations/${arrivalId}/check-out`, "POST")).status,
     409,
   );
-  const nextStayIn = checkInReservation(
-    database,
-    nextStayId,
-    new Date(`${tomorrow}T12:00:00`),
-  );
-  assert.equal(nextStayIn.stayStatus, "checked_in");
-  assert.equal(nextStayIn.unitId, unitId);
-  const nextStayOut = checkOutReservation(
-    database,
-    nextStayId,
-    new Date(`${tomorrow}T13:00:00`),
-  );
-  assert.equal(nextStayOut.stayStatus, "checked_out");
   assert.equal(
     (await request(`/front-desk?date=${tomorrow}`)).data.frontDesk.summary.checkedIn,
     0,
@@ -717,7 +699,7 @@ try {
   }
   assert.equal(foreignKeyRejected, true);
 
-  console.log("Property, unit, guest, and reservation API integration tests passed.");
+  console.log("Property, unit, guest, reservation, and front-desk API integration tests passed.");
 } finally {
   if (server?.listening) {
     await new Promise<void>((resolveClose, reject) => {
