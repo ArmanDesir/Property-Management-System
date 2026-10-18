@@ -24,17 +24,17 @@ export const errorHandler: ErrorRequestHandler = (error: unknown, _request, resp
     return;
   }
 
-  if (isDatabaseError(error, "SQLITE_CONSTRAINT_UNIQUE")) {
+  if (isDatabaseError(error, "SQLITE_CONSTRAINT_UNIQUE", 2067)) {
     response.status(409).json({ error: "A unit with this name already exists in this property." });
     return;
   }
 
-  if (isDatabaseError(error, "SQLITE_CONSTRAINT_FOREIGNKEY")) {
+  if (isDatabaseError(error, "SQLITE_CONSTRAINT_FOREIGNKEY", 787)) {
     response.status(409).json({ error: "This record is still referenced and cannot be removed." });
     return;
   }
 
-  if (isDatabaseError(error, "SQLITE_CONSTRAINT_CHECK")) {
+  if (isDatabaseError(error, "SQLITE_CONSTRAINT_CHECK", 275)) {
     response.status(400).json({ error: "One or more values violate a database constraint." });
     return;
   }
@@ -51,10 +51,16 @@ export const errorHandler: ErrorRequestHandler = (error: unknown, _request, resp
   response.status(500).json({ error: "An unexpected server error occurred." });
 };
 
-function isDatabaseError(error: unknown, code: string): boolean {
+function isDatabaseError(error: unknown, code: string, errorNumber: number): boolean {
   let current: unknown = error;
   while (current instanceof Error) {
-    if ("code" in current && current.code === code) return true;
+    if (
+      "code" in current &&
+      (current.code === code ||
+        (current.code === "ERR_SQLITE_ERROR" &&
+          "errcode" in current &&
+          current.errcode === errorNumber))
+    ) return true;
     current = "cause" in current ? current.cause : undefined;
   }
   return false;

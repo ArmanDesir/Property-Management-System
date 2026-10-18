@@ -423,15 +423,15 @@
         },
         "properties_currency_check": {
           "name": "properties_currency_check",
-          "value": "length(\"properties\".\"default_currency\") = 3"
+          "value": "\"properties\".\"default_currency\" GLOB '[A-Z][A-Z][A-Z]'"
         },
         "properties_check_in_time_check": {
           "name": "properties_check_in_time_check",
-          "value": "\"properties\".\"default_check_in_time\" GLOB '[0-2][0-9]:[0-5][0-9]'"
+          "value": "\"properties\".\"default_check_in_time\" GLOB '[0-2][0-9]:[0-5][0-9]' AND substr(\"properties\".\"default_check_in_time\", 1, 2) BETWEEN '00' AND '23'"
         },
         "properties_check_out_time_check": {
           "name": "properties_check_out_time_check",
-          "value": "\"properties\".\"default_check_out_time\" GLOB '[0-2][0-9]:[0-5][0-9]'"
+          "value": "\"properties\".\"default_check_out_time\" GLOB '[0-2][0-9]:[0-5][0-9]' AND substr(\"properties\".\"default_check_out_time\", 1, 2) BETWEEN '00' AND '23'"
         }
       }
     },

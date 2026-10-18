@@ -38,11 +38,11 @@ export function createPropertiesRouter(database: PmsDatabase): Router {
     "/",
     asyncHandler(async (request, response) => {
       const input = parsePropertyInput(request.body);
-      const record = await database
+      const [record] = await database
         .insert(properties)
         .values(input)
         .returning()
-        .get();
+        .all();
       response.status(201).json({ property: record });
     }),
   );
@@ -121,11 +121,12 @@ export function createPropertiesRouter(database: PmsDatabase): Router {
 }
 
 async function findProperty(database: PmsDatabase, id: number) {
-  return database
+  const [record] = await database
     .select()
     .from(properties)
     .where(eq(properties.id, id))
-    .get();
+    .all();
+  return record;
 }
 
 function parsePropertyInput(value: unknown) {

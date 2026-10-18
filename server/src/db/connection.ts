@@ -6,13 +6,14 @@ import { fileURLToPath } from "node:url";
 import * as schema from "./schema.js";
 
 const moduleDirectory = dirname(fileURLToPath(import.meta.url));
-const defaultDatabasePath = resolve(moduleDirectory, "../../../data/pms.db");
-const publicDirectory = resolve(moduleDirectory, "../../../client/public");
+const projectRoot = resolve(moduleDirectory, "../../..");
+const defaultDatabasePath = resolve(projectRoot, "data/pms.db");
+const publicDirectory = resolve(projectRoot, "client/public");
 
 export function createDatabase(
   databasePath = process.env.PMS_DATABASE_PATH ?? defaultDatabasePath,
 ) {
-  const resolvedDatabasePath = resolve(databasePath);
+  const resolvedDatabasePath = resolve(projectRoot, databasePath);
   const relativeToPublic = relative(publicDirectory, resolvedDatabasePath);
   if (
     relativeToPublic === "" ||

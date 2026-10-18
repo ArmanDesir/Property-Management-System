@@ -22,11 +22,11 @@ export function createUnitsRouter(database: PmsDatabase): Router {
     "/",
     asyncHandler(async (request, response) => {
       const propertyId = parseRecordId(request.params.propertyId);
-      const property = await database
+      const [property] = await database
         .select({ id: properties.id })
         .from(properties)
         .where(eq(properties.id, propertyId))
-        .get();
+        .all();
       if (!property) throw new HttpError(404, "Property not found.");
 
       const includeArchived = request.query.includeArchived === "true";
@@ -47,22 +47,22 @@ export function createUnitsRouter(database: PmsDatabase): Router {
     "/",
     asyncHandler(async (request, response) => {
       const propertyId = parseRecordId(request.params.propertyId);
-      const property = await database
+      const [property] = await database
         .select({ status: properties.status })
         .from(properties)
         .where(eq(properties.id, propertyId))
-        .get();
+        .all();
       if (!property) throw new HttpError(404, "Property not found.");
       if (property.status !== "active") {
         throw new HttpError(409, "Restore this property before adding units.");
       }
 
       const input = parseUnitInput(request.body);
-      const record = await database
+      const [record] = await database
         .insert(units)
         .values({ ...input, propertyId })
         .returning()
-        .get();
+        .all();
       response.status(201).json({ unit: record });
     }),
   );
@@ -81,11 +81,11 @@ export function createUnitsRouter(database: PmsDatabase): Router {
     "/:unitId",
     asyncHandler(async (request, response) => {
       const { propertyId, unitId } = parseIds(request.params.propertyId, request.params.unitId);
-      const property = await database
+      const [property] = await database
         .select({ status: properties.status })
         .from(properties)
         .where(eq(properties.id, propertyId))
-        .get();
+        .all();
       if (!property) throw new HttpError(404, "Property not found.");
       if (property.status !== "active") {
         throw new HttpError(409, "Restore this property before editing its units.");
@@ -110,11 +110,11 @@ export function createUnitsRouter(database: PmsDatabase): Router {
     "/:unitId/status",
     asyncHandler(async (request, response) => {
       const { propertyId, unitId } = parseIds(request.params.propertyId, request.params.unitId);
-      const property = await database
+      const [property] = await database
         .select({ status: properties.status })
         .from(properties)
         .where(eq(properties.id, propertyId))
-        .get();
+        .all();
       if (!property) throw new HttpError(404, "Property not found.");
       if (property.status !== "active") {
         throw new HttpError(409, "Restore this property before changing unit status.");
@@ -167,14 +167,15 @@ export function createUnitsRouter(database: PmsDatabase): Router {
 }
 
 async function findUnit(database: PmsDatabase, propertyId: number, unitId: number) {
-  return database
+  const [record] = await database
     .select()
     .from(units)
     .where(and(eq(units.id, unitId), eq(units.propertyId, propertyId)))
-    .get();
+    .all();
+  return record;
 }
 
-function parseIds(propertyIdValue: string, unitIdValue: string) {
+function parseIds(propertyIdValue: unknown, unitIdValue: unknown) {
   return {
     propertyId: parseRecordId(propertyIdValue),
     unitId: parseRecordId(unitIdValue),

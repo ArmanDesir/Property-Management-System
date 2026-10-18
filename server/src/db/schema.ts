@@ -31,14 +31,17 @@ export const properties = sqliteTable("properties", {
     sql`${table.propertyType} IN ('hotel', 'resort', 'hostel', 'apartment', 'vacation_rental', 'other')`,
   ),
   check("properties_status_check", sql`${table.status} IN ('active', 'archived')`),
-  check("properties_currency_check", sql`length(${table.defaultCurrency}) = 3`),
+  check(
+    "properties_currency_check",
+    sql`${table.defaultCurrency} GLOB '[A-Z][A-Z][A-Z]'`,
+  ),
   check(
     "properties_check_in_time_check",
-    sql`${table.defaultCheckInTime} GLOB '[0-2][0-9]:[0-5][0-9]'`,
+    sql`${table.defaultCheckInTime} GLOB '[0-2][0-9]:[0-5][0-9]' AND substr(${table.defaultCheckInTime}, 1, 2) BETWEEN '00' AND '23'`,
   ),
   check(
     "properties_check_out_time_check",
-    sql`${table.defaultCheckOutTime} GLOB '[0-2][0-9]:[0-5][0-9]'`,
+    sql`${table.defaultCheckOutTime} GLOB '[0-2][0-9]:[0-5][0-9]' AND substr(${table.defaultCheckOutTime}, 1, 2) BETWEEN '00' AND '23'`,
   ),
 ],
 );
