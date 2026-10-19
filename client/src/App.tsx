@@ -25,9 +25,13 @@ import {
   InvoiceFormPage,
 } from "./features/billing/BillingPages";
 import { ReportsPage } from "./features/reports/ReportsPage";
+import { AuthPage, type StaffUser } from "./features/auth/AuthPage";
+import { StaffPage } from "./features/staff/StaffPage";
+import { ApiRequestError, apiRequest } from "./lib/api";
 import "./App.css";
 
 type HealthStatus = "checking" | "online" | "offline";
+type AuthMode = "checking" | "setup" | "login" | "ready" | "offline";
 type Route =
   | { name: "dashboard" }
   | { name: "properties" }
@@ -49,6 +53,7 @@ type Route =
   | { name: "invoice-details"; invoiceId: number }
   | { name: "edit-invoice"; invoiceId: number }
   | { name: "reports" }
+  | { name: "staff" }
   | { name: "new-reservation" }
   | { name: "reservation-details"; reservationId: number }
   | { name: "edit-reservation"; reservationId: number }
@@ -59,6 +64,11 @@ function App() {
   const [locationSearch, setLocationSearch] = useState(window.location.search);
   const [status, setStatus] = useState<HealthStatus>("checking");
   const [notice, setNotice] = useState("");
+  const [authMode, setAuthMode] = useState<AuthMode>("checking");
+  const [staffUser, setStaffUser] = useState<StaffUser | null>(null);
+  const [setupToken, setSetupToken] = useState("");
+  const [authError, setAuthError] = useState("");
+  const [authRetry, setAuthRetry] = useState(0);
 
   useEffect(() => {
     const onPopState = () => {
@@ -87,6 +97,59 @@ function App() {
     };
   }, []);
 
+  useEffect(() => {
+    let active = true;
+    const loadSession = async () => {
+      setAuthMode("checking");
+      setAuthError("");
+      try {
+        const authStatus = await apiRequest<{
+          setupRequired: boolean;
+          setupToken?: string;
+        }>("/auth/status");
+        if (!active) return;
+        if (authStatus.setupRequired) {
+          setSetupToken(authStatus.setupToken ?? "");
+          setAuthMode("setup");
+          return;
+        }
+        try {
+          const result = await apiRequest<{ user: StaffUser }>("/auth/me");
+          if (active) {
+            setStaffUser(result.user);
+            setAuthMode("ready");
+          }
+        } catch (reason) {
+          if (!active) return;
+          if (reason instanceof ApiRequestError && reason.status === 401) {
+            setAuthMode("login");
+          } else {
+            throw reason;
+          }
+        }
+      } catch (reason) {
+        if (active) {
+          setAuthError(errorMessage(reason));
+          setAuthMode("offline");
+        }
+      }
+    };
+    void loadSession();
+    return () => {
+      active = false;
+    };
+  }, [authRetry]);
+
+  useEffect(() => {
+    const onUnauthenticated = () => {
+      setStaffUser(null);
+      setAuthMode("login");
+      setNotice("");
+    };
+    window.addEventListener("pms:unauthenticated", onUnauthenticated);
+    return () => window.removeEventListener("pms:unauthenticated", onUnauthenticated);
+  }, []);
+
   const navigate = (path: string) => {
     const url = new URL(path, window.location.origin);
     if (`${url.pathname}${url.search}` !== `${window.location.pathname}${window.location.search}`) {
@@ -101,6 +164,30 @@ function App() {
   const flash = (message: string) => setNotice(message);
   const route = resolveRoute(pathname);
   const pageProps = { navigate, flash };
+  if (authMode === "checking") {
+    return (
+      <main className="shell auth-shell">
+        <div className="state-panel" role="status">Checking local access…</div>
+      </main>
+    );
+  }
+  if (authMode !== "ready" || !staffUser) {
+    return (
+      <AuthPage
+        mode={authMode === "setup" || authMode === "offline" ? authMode : "login"}
+        setupToken={setupToken}
+        error={authError}
+        onAuthenticated={(user) => {
+          setStaffUser(user);
+          setAuthMode("ready");
+          setAuthError("");
+        }}
+        onRetry={() => setAuthRetry((value) => value + 1)}
+      />
+    );
+  }
+  const role = staffUser.role;
+  const hasRouteAccess = canAccessRoute(route, role);
   const isPropertiesRoute =
     route.name === "properties" ||
     route.name.includes("property") ||
@@ -126,65 +213,45 @@ function App() {
           </span>
         </a>
         <nav className="main-nav" aria-label="Main navigation">
-          <a
-            href="/"
-            className={
-              route.name === "dashboard" ? "nav-link active" : "nav-link"
-            }
-            onClick={linkClick("/", navigate)}
-          >
-            Dashboard
-          </a>
-          <a
-            href="/front-desk"
-            className={route.name === "front-desk" ? "nav-link active" : "nav-link"}
-            onClick={linkClick("/front-desk", navigate)}
-          >
-            Front Desk
-          </a>
-          <a
-            href="/housekeeping"
-            className={route.name === "housekeeping" ? "nav-link active" : "nav-link"}
-            onClick={linkClick("/housekeeping", navigate)}
-          >
-            Housekeeping
-          </a>
-          <a
-            href="/properties"
-            className={isPropertiesRoute ? "nav-link active" : "nav-link"}
-            onClick={linkClick("/properties", navigate)}
-          >
-            Properties
-          </a>
-          <a
-            href="/guests"
-            className={isGuestsRoute ? "nav-link active" : "nav-link"}
-            onClick={linkClick("/guests", navigate)}
-          >
-            Guests
-          </a>
-          <a
-            href="/reservations"
-            className={isReservationsRoute ? "nav-link active" : "nav-link"}
-            onClick={linkClick("/reservations", navigate)}
-          >
-            Reservations
-          </a>
-          <a
-            href="/billing"
-            className={isBillingRoute ? "nav-link active" : "nav-link"}
-            onClick={linkClick("/billing", navigate)}
-          >
-            Billing
-          </a>
-          <a
-            href="/reports"
-            className={isReportsRoute ? "nav-link active" : "nav-link"}
-            onClick={linkClick("/reports", navigate)}
-          >
-            Reports
-          </a>
+          <NavLink path="/" label="Dashboard" active={route.name === "dashboard"} navigate={navigate} />
+          {(role === "administrator" || role === "front_desk") && (
+            <>
+              <NavLink path="/front-desk" label="Front Desk" active={route.name === "front-desk"} navigate={navigate} />
+              <NavLink path="/guests" label="Guests" active={isGuestsRoute} navigate={navigate} />
+              <NavLink path="/reservations" label="Reservations" active={isReservationsRoute} navigate={navigate} />
+            </>
+          )}
+          {(role === "administrator" || role === "housekeeping") && (
+            <NavLink path="/housekeeping" label="Housekeeping" active={route.name === "housekeeping"} navigate={navigate} />
+          )}
+          {role === "administrator" && (
+            <NavLink path="/properties" label="Properties" active={isPropertiesRoute} navigate={navigate} />
+          )}
+          {(role === "administrator" || role === "front_desk" || role === "accounting") && (
+            <NavLink path="/billing" label="Billing" active={isBillingRoute} navigate={navigate} />
+          )}
+          {(role === "administrator" || role === "accounting") && (
+            <NavLink path="/reports" label="Reports" active={isReportsRoute} navigate={navigate} />
+          )}
+          {role === "administrator" && (
+            <NavLink path="/staff" label="Staff" active={route.name === "staff"} navigate={navigate} />
+          )}
         </nav>
+        <div className="staff-session">
+          <span className="staff-session-name">{staffUser.displayName}</span>
+          <button
+            className="nav-link sign-out"
+            onClick={() => {
+              void apiRequest("/auth/logout", "POST").then(() => {
+                setStaffUser(null);
+                setAuthMode("login");
+                navigate("/");
+              }).catch((reason: unknown) => flash(errorMessage(reason)));
+            }}
+          >
+            Sign out
+          </button>
+        </div>
         <div className="local-badge">
           <span className={`status-dot ${status}`} />
           {status === "checking"
@@ -208,7 +275,9 @@ function App() {
         </div>
       )}
 
-      {route.name === "dashboard" && <Dashboard navigate={navigate} />}
+      {hasRouteAccess ? (
+      <>
+      {route.name === "dashboard" && <Dashboard navigate={navigate} role={role} />}
       {route.name === "properties" && <PropertiesPage {...pageProps} />}
       {route.name === "new-property" && <PropertyFormPage {...pageProps} />}
       {route.name === "property-details" && (
@@ -255,13 +324,23 @@ function App() {
       )}
       {route.name === "front-desk" && <FrontDeskPage {...pageProps} />}
       {route.name === "housekeeping" && <HousekeepingPage {...pageProps} />}
-      {route.name === "billing" && <BillingPage {...pageProps} />}
+      {route.name === "billing" && (
+        <BillingPage {...pageProps} readOnly={role === "front_desk"} />
+      )}
       {route.name === "reports" && <ReportsPage navigate={navigate} />}
       {route.name === "new-invoice" && (
         <InvoiceFormPage key={locationSearch} {...pageProps} />
       )}
       {route.name === "invoice-details" && (
-        <InvoiceDetailsPage {...pageProps} invoiceId={route.invoiceId} />
+        <InvoiceDetailsPage
+          {...pageProps}
+          invoiceId={route.invoiceId}
+          readOnly={role === "front_desk"}
+          canViewReservation={role === "administrator" || role === "front_desk"}
+        />
+      )}
+      {route.name === "staff" && (
+        <StaffPage currentUserId={staffUser.id} {...pageProps} />
       )}
       {route.name === "edit-invoice" && (
         <InvoiceFormPage {...pageProps} invoiceId={route.invoiceId} />
@@ -281,6 +360,15 @@ function App() {
           back={() => navigate("/properties")}
         />
       )}
+      </>
+      ) : (
+        <section className="page-section">
+          <ErrorState
+            message="This account does not have permission to open that page."
+            back={() => navigate("/")}
+          />
+        </section>
+      )}
 
       <footer>
         <span>ZCSMST PMS</span>
@@ -290,7 +378,13 @@ function App() {
   );
 }
 
-function Dashboard({ navigate }: { navigate: (path: string) => void }) {
+function Dashboard({
+  navigate,
+  role,
+}: {
+  navigate: (path: string) => void;
+  role: StaffUser["role"];
+}) {
   return (
     <>
       <section className="hero">
@@ -307,12 +401,14 @@ function Dashboard({ navigate }: { navigate: (path: string) => void }) {
             Keep your properties and rentable spaces organized, all together and
             right here on your machine.
           </p>
-          <button
-            className="primary-link"
-            onClick={() => navigate("/properties")}
-          >
-            Explore your properties <span aria-hidden="true">↘</span>
-          </button>
+          {role === "administrator" && (
+            <button
+              className="primary-link"
+              onClick={() => navigate("/properties")}
+            >
+              Explore your properties <span aria-hidden="true">↘</span>
+            </button>
+          )}
         </div>
         <div className="hero-art" aria-hidden="true">
           <div className="sun" />
@@ -355,7 +451,7 @@ function Dashboard({ navigate }: { navigate: (path: string) => void }) {
           </p>
         </div>
         <div className="area-grid">
-          <button
+          {role === "administrator" && <button
             className="area-card area-card-button"
             onClick={() => navigate("/properties")}
           >
@@ -370,7 +466,7 @@ function Dashboard({ navigate }: { navigate: (path: string) => void }) {
             <span className="card-arrow" aria-hidden="true">
               ↗
             </span>
-          </button>
+          </button>}
           {[
             ["02", "Front Desk", "Manage today’s arrivals, departures, and in-house stays.", "↔"],
             ["03", "Reservations", "Manage dates, availability, and stays.", "▦"],
@@ -393,7 +489,7 @@ function Dashboard({ navigate }: { navigate: (path: string) => void }) {
               "Review reservations, occupancy, housekeeping, and billing trends.",
               "▤",
             ],
-          ].map(([number, title, description, icon]) =>
+          ].filter(([, title]) => canAccessDashboardTile(role, title)).map(([number, title, description, icon]) =>
             title === "Guests" || title === "Reservations" || title === "Front Desk" || title === "Housekeeping" || title === "Billing" || title === "Reports" ? (
               <button
                 className="area-card area-card-button"
@@ -455,6 +551,7 @@ function resolveRoute(path: string): Route {
   if (path === "/housekeeping") return { name: "housekeeping" };
   if (path === "/billing") return { name: "billing" };
   if (path === "/reports") return { name: "reports" };
+  if (path === "/staff") return { name: "staff" };
   if (path === "/billing/new") return { name: "new-invoice" };
   if (path === "/reservations/new") return { name: "new-reservation" };
 
@@ -506,6 +603,68 @@ function resolveRoute(path: string): Route {
   return { name: "not-found" };
 }
 
+function canAccessRoute(route: Route, role: StaffUser["role"]): boolean {
+  if (route.name === "dashboard" || route.name === "not-found") return true;
+  if (role === "administrator") return true;
+  if (role === "front_desk") {
+    return [
+      "front-desk",
+      "guests",
+      "new-guest",
+      "guest-details",
+      "edit-guest",
+      "reservations",
+      "new-reservation",
+      "reservation-details",
+      "edit-reservation",
+      "billing",
+      "invoice-details",
+    ].includes(route.name);
+  }
+  if (role === "housekeeping") return route.name === "housekeeping";
+  return [
+    "billing",
+    "new-invoice",
+    "invoice-details",
+    "edit-invoice",
+    "reports",
+  ].includes(route.name);
+}
+
+function canAccessDashboardTile(
+  role: StaffUser["role"],
+  title: string,
+): boolean {
+  if (role === "administrator") return true;
+  if (role === "front_desk") {
+    return ["Front Desk", "Reservations", "Guests", "Billing"].includes(title);
+  }
+  if (role === "housekeeping") return title === "Housekeeping";
+  return title === "Billing" || title === "Reports";
+}
+
+function NavLink({
+  path,
+  label,
+  active,
+  navigate,
+}: {
+  path: string;
+  label: string;
+  active: boolean;
+  navigate: (path: string) => void;
+}) {
+  return (
+    <a
+      href={path}
+      className={active ? "nav-link active" : "nav-link"}
+      onClick={linkClick(path, navigate)}
+    >
+      {label}
+    </a>
+  );
+}
+
 function linkClick(path: string, navigate: (path: string) => void) {
   return (event: MouseEvent<HTMLAnchorElement>) => {
     if (
@@ -519,6 +678,12 @@ function linkClick(path: string, navigate: (path: string) => void) {
     event.preventDefault();
     navigate(path);
   };
+}
+
+function errorMessage(reason: unknown): string {
+  return reason instanceof Error
+    ? reason.message
+    : "The local PMS request could not be completed.";
 }
 
 export default App;

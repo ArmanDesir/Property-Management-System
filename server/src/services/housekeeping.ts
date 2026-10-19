@@ -13,6 +13,11 @@ export interface HousekeepingStay {
   actualCheckInAt: string;
 }
 
+export interface HousekeepingProperty {
+  id: number;
+  name: string;
+}
+
 export interface HousekeepingUnit {
   id: number;
   propertyId: number;
@@ -36,6 +41,7 @@ export interface HousekeepingOverview {
     clean: number;
     maintenance: number;
   };
+  properties: HousekeepingProperty[];
   units: HousekeepingUnit[];
 }
 
@@ -89,6 +95,12 @@ export function listHousekeeping(
     WHERE ${condition}${statusCondition}
     ORDER BY p.name COLLATE NOCASE, u.name COLLATE NOCASE, u.id
   `).all(...parameters, ...(status === "all" ? [] : [status]));
+  const properties = database.$client.prepare(`
+    SELECT id, name FROM properties WHERE status = 'active' ORDER BY name COLLATE NOCASE, id
+  `).all().map((row) => ({
+    id: integerValue(row.id),
+    name: textValue(row.name),
+  }));
   return {
     filters: { propertyId, status },
     summary: {
@@ -97,6 +109,7 @@ export function listHousekeeping(
       clean: integerValue(summaryRow?.clean),
       maintenance: integerValue(summaryRow?.maintenance),
     },
+    properties,
     units: rows.map(toHousekeepingUnit),
   };
 }
@@ -175,13 +188,10 @@ function getHousekeepingUnit(database: PmsDatabase, unitId: number): Housekeepin
 }
 
 function toHousekeepingUnit(row: Record<string, unknown>): HousekeepingUnit {
-  const reservationId = row.reservation_id === null
-    ? null
-    : integerValue(row.reservation_id);
-  const activeStay = reservationId === null
+  const activeStay = row.reservation_id === null
     ? null
     : {
-      reservationId,
+      reservationId: integerValue(row.reservation_id),
       reservationReference: textValue(row.reservation_reference),
       guestName: `${textValue(row.first_name)} ${textValue(row.last_name)}`,
       checkIn: textValue(row.check_in),

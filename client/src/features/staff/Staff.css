@@ -1,0 +1,17 @@
+.staff-form { margin-bottom: 24px; padding: 24px; }
+.staff-form-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+.staff-form-heading .eyebrow { margin-bottom: 7px; }
+.staff-form-heading h2 { font-size: 21px; }
+.staff-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 17px; }
+.staff-form-actions { display: flex; justify-content: flex-end; margin-top: 20px; }
+.staff-table-wrap { overflow-x: auto; border: 1px solid #e5e9e1; border-radius: 6px; background: #fff; }
+.staff-table { width: 100%; border-collapse: collapse; text-align: left; font-size: 12px; }
+.staff-table th { padding: 13px 15px; background: #f6f8f4; color: #7a867c; font-size: 10px; letter-spacing: .7px; text-transform: uppercase; }
+.staff-table td { padding: 13px 15px; border-top: 1px solid #edf0eb; color: #637067; white-space: nowrap; }
+.staff-table .staff-name { color: #2c3f32; font-weight: 700; }
+.staff-status { display: inline-flex; border-radius: 999px; padding: 5px 9px; font-size: 10px; font-weight: 700; }
+.staff-status.active { background: #e9f3e9; color: #4c7652; }
+.staff-status.inactive { background: #f2eeeb; color: #8b756c; }
+.staff-actions { display: flex; justify-content: flex-end; gap: 7px; }
+.staff-actions .button { min-height: 32px; padding: 0 10px; }
+@media (max-width: 640px) { .staff-form-grid { grid-template-columns: 1fr; } .staff-form { padding: 18px; } }

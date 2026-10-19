@@ -9,12 +9,21 @@ import { createInvoicesRouter } from "./routes/invoices.js";
 import { createPropertiesRouter } from "./routes/properties.js";
 import { createReservationsRouter } from "./routes/reservations.js";
 import { createReportsRouter } from "./routes/reports.js";
+import { createAuthRouter } from "./routes/auth.js";
+import { createStaffRouter } from "./routes/staff.js";
+import {
+  attachAuthenticatedStaff,
+  requireAuthenticatedAndAuthorized,
+} from "./services/auth.js";
 
 export function createApp(database: PmsDatabase) {
   const app = express();
 
   app.use(express.json({ limit: "100kb" }));
   app.use("/api/health", createHealthRouter(database));
+  app.use(attachAuthenticatedStaff(database));
+  app.use("/api/auth", createAuthRouter(database));
+  app.use(requireAuthenticatedAndAuthorized());
   app.use("/api/front-desk", createFrontDeskRouter(database));
   app.use("/api/housekeeping", createHousekeepingRouter(database));
   app.use("/api/invoices", createInvoicesRouter(database));
@@ -22,6 +31,7 @@ export function createApp(database: PmsDatabase) {
   app.use("/api/properties", createPropertiesRouter(database));
   app.use("/api/reservations", createReservationsRouter(database));
   app.use("/api/reports", createReportsRouter(database));
+  app.use("/api/staff", createStaffRouter(database));
   app.use(errorHandler);
 
   return app;

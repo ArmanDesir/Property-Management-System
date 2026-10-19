@@ -55,9 +55,15 @@ h3 { margin: 0 0 7px; font: 700 13px "Segoe UI", Arial, sans-serif; }
 footer { min-height: 52px; display: flex; align-items: center; justify-content: space-between; border-top: 1px solid #e2e7df; color: #9aa39a; font-size: 10px; }
 footer span:first-child { font: 700 9px "Segoe UI", Arial, sans-serif; letter-spacing: 1.3px; }
 @media (max-width: 850px) { .area-grid { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 1040px) { .topbar { gap: 14px; } .main-nav { gap: 14px; margin-right: 10px; } .staff-session-name { display: none; } }
+@media (max-width: 760px) { .topbar { height: auto; min-height: 68px; flex-wrap: wrap; padding: 12px 0; } .main-nav { order: 3; width: 100%; height: auto; margin: 5px 0 0; flex-wrap: wrap; gap: 14px; } .nav-link { height: 28px; } .nav-link.active::after { bottom: -3px; } .staff-session { margin-left: auto; } .local-badge { font-size: 0; gap: 0; } }
 @media (max-width: 620px) { .shell { width: min(100% - 36px, 480px); } .topbar { height: 68px; } .hero { grid-template-columns: 1fr; padding: 49px 0 25px; } h1 { font-size: 54px; } .hero-art { min-height: 275px; } .sun { right: 13%; width: 210px; height: 210px; } .art-card { transform: scale(.86); margin-right: 0; } .art-note { right: 0; bottom: 22px; } .workspace { padding-top: 30px; } .area-grid { grid-template-columns: repeat(2, 1fr); } .section-aside { display: none; } .area-card { min-height: 165px; } footer { font-size: 9px; } }
 
 .main-nav { display: flex; align-items: center; gap: 23px; height: 100%; margin-left: auto; margin-right: 28px; }
+.staff-session { display: flex; align-items: center; gap: 12px; color: #77837a; font-size: 11px; white-space: nowrap; }
+.staff-session-name { max-width: 130px; overflow: hidden; text-overflow: ellipsis; }
+.sign-out { height: auto; padding: 0; border: 0; background: transparent; cursor: pointer; }
+.sign-out:hover { color: #294b3b; }
 .nav-link { position: relative; display: inline-flex; align-items: center; height: 100%; color: #7b867d; font-size: 12px; }
 .nav-link:hover, .nav-link.active { color: #294b3b; }
 .nav-link.active::after { position: absolute; right: 0; bottom: 0; left: 0; height: 2px; background: #6e9278; content: ""; }

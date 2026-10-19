@@ -1,23 +1,20 @@
 import { useEffect, useState } from "react";
 import { apiRequest } from "../../lib/api";
 import { LoadingState, ErrorState } from "../properties/PropertiesPages";
-import {
-  formatUnitType,
-  type Property,
-  type UnitType,
-} from "../properties/api";
+import { formatUnitType, type UnitType } from "../properties/api";
 import "./Housekeeping.css";
 
 type HousekeepingStatus = "dirty" | "cleaning" | "clean";
 type StatusFilter = HousekeepingStatus | "all";
 
 interface ActiveStay {
-  reservationId: number;
-  reservationReference: string;
-  guestName: string;
   checkIn: string;
   checkOut: string;
-  actualCheckInAt: string;
+}
+
+interface HousekeepingProperty {
+  id: number;
+  name: string;
 }
 
 interface HousekeepingUnit {
@@ -39,6 +36,7 @@ interface HousekeepingOverview {
     clean: number;
     maintenance: number;
   };
+  properties: HousekeepingProperty[];
   units: HousekeepingUnit[];
 }
 
@@ -61,27 +59,12 @@ export function HousekeepingPage({
   navigate: (path: string) => void;
   flash: (message: string) => void;
 }) {
-  const [properties, setProperties] = useState<Property[]>([]);
   const [propertyId, setPropertyId] = useState("");
   const [status, setStatus] = useState<StatusFilter>("all");
   const [overview, setOverview] = useState<HousekeepingOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [busyUnitId, setBusyUnitId] = useState<number | null>(null);
-
-  useEffect(() => {
-    let active = true;
-    apiRequest<{ properties: Property[] }>("/properties")
-      .then(({ properties: records }) => {
-        if (active) setProperties(records);
-      })
-      .catch((reason: unknown) => {
-        if (active) setError(errorMessage(reason));
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
 
   const refresh = async () => {
     setLoading(true);
@@ -157,7 +140,7 @@ export function HousekeepingPage({
               onChange={(event) => setPropertyId(event.target.value)}
             >
               <option value="">All properties</option>
-              {properties.map((property) => (
+              {overview.properties.map((property) => (
                 <option key={property.id} value={property.id}>{property.name}</option>
               ))}
             </select>
@@ -197,7 +180,7 @@ export function HousekeepingPage({
           <span className="empty-icon" aria-hidden="true">✳</span>
           <h2>No matching units</h2>
           <p>
-            {properties.length === 0
+            {overview.properties.length === 0
               ? "Add a property and unit to begin tracking housekeeping."
               : "Try another property or housekeeping status filter."}
           </p>
@@ -253,9 +236,9 @@ export function HousekeepingPage({
                 </div>
                 {unit.activeStay && (
                   <div className="housekeeping-stay">
-                    <span>Currently occupied by {unit.activeStay.guestName}</span>
+                    <span>Currently occupied</span>
                     <span>
-                      {unit.activeStay.reservationReference} · {formatDate(unit.activeStay.checkIn)}
+                      {formatDate(unit.activeStay.checkIn)}
                       {" – "}
                       {formatDate(unit.activeStay.checkOut)}
                     </span>

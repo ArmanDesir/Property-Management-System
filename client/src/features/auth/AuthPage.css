@@ -1,0 +1,10 @@
+.auth-shell { min-height: 100vh; display: flex; flex-direction: column; justify-content: center; }
+.auth-card { width: min(100%, 460px); margin: 48px auto; padding: 36px; border: 1px solid #e5e9e1; border-radius: 8px; background: #fbfcf9; box-shadow: 0 16px 44px #3142330b; }
+.auth-card > .brand-mark { margin-bottom: 25px; }
+.auth-card .eyebrow { margin-bottom: 10px; }
+.auth-card .page-intro { margin-bottom: 22px; }
+.auth-form { display: grid; gap: 16px; }
+.auth-form .button { width: 100%; }
+.auth-retry { margin-top: -8px; }
+.auth-local-note { margin: 21px 0 0; color: #89948b; font-size: 11px; line-height: 1.7; }
+@media (max-width: 520px) { .auth-card { margin: 22px auto; padding: 26px 21px; } }

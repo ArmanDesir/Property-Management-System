@@ -15,10 +15,12 @@
     "db:migrate": "tsx src/db/migrate.ts",
     "test:db": "tsx scripts/test-db.ts",
     "test:api": "tsx scripts/test-api.ts",
+    "test:auth": "tsx scripts/test-auth.ts",
     "test:billing": "tsx scripts/test-billing.ts",
     "test:reports": "tsx scripts/test-reports.ts"
   },
   "dependencies": {
+    "bcryptjs": "^3.0.3",
     "drizzle-orm": "^0.45.4",
     "express": "^4.21.2"
   },

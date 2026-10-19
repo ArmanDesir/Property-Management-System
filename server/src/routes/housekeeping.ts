@@ -26,7 +26,25 @@ export function createHousekeepingRouter(database: PmsDatabase): Router {
       const status = request.query.status === undefined
         ? "all"
         : queryStatus(request.query.status);
-      response.json({ housekeeping: listHousekeeping(database, propertyId, status) });
+      const overview = listHousekeeping(database, propertyId, status);
+      if (request.auth?.role === "housekeeping") {
+        response.json({
+          housekeeping: {
+            ...overview,
+            units: overview.units.map((unit) => ({
+              ...unit,
+              activeStay: unit.activeStay
+                ? {
+                  checkIn: unit.activeStay.checkIn,
+                  checkOut: unit.activeStay.checkOut,
+                }
+                : null,
+            })),
+          },
+        });
+        return;
+      }
+      response.json({ housekeeping: overview });
     }),
   );
 

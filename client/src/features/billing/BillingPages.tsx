@@ -57,7 +57,10 @@ const statuses: Array<InvoiceStatus | "all"> = [
   "void",
 ];
 
-export function BillingPage({ navigate }: PageProps) {
+export function BillingPage({
+  navigate,
+  readOnly = false,
+}: PageProps & { readOnly?: boolean }) {
   const [status, setStatus] = useState<InvoiceStatus | "all">("all");
   const [search, setSearch] = useState("");
   const [invoices, setInvoices] = useState<InvoiceSummary[]>([]);
@@ -102,11 +105,17 @@ export function BillingPage({ navigate }: PageProps) {
         <div>
           <p className="eyebrow"><span /> BILLING &amp; INVOICING</p>
           <h1 className="page-title">Billing</h1>
-          <p className="page-intro">Create reservation-linked invoices and track manually recorded payments.</p>
+          <p className="page-intro">
+            {readOnly
+              ? "Review reservation-linked invoices and manually recorded payments."
+              : "Create reservation-linked invoices and track manually recorded payments."}
+          </p>
         </div>
-        <button className="button button-primary" onClick={() => navigate("/billing/new")}>
-          <span aria-hidden="true">＋</span> Create invoice
-        </button>
+        {!readOnly && (
+          <button className="button button-primary" onClick={() => navigate("/billing/new")}>
+            <span aria-hidden="true">＋</span> Create invoice
+          </button>
+        )}
       </div>
 
       <div className="billing-filters">
@@ -150,8 +159,16 @@ export function BillingPage({ navigate }: PageProps) {
         <div className="state-panel empty-state">
           <span className="empty-icon" aria-hidden="true">＄</span>
           <h2>{search || status !== "all" ? "No invoices match these filters" : "No invoices yet"}</h2>
-          <p>Choose a reservation and create a draft invoice to begin tracking charges and balances.</p>
-          <button className="button button-primary" onClick={() => navigate("/billing/new")}>Create a draft invoice</button>
+          <p>
+            {readOnly
+              ? "Invoices will appear here when they have been created."
+              : "Choose a reservation and create a draft invoice to begin tracking charges and balances."}
+          </p>
+          {!readOnly && (
+            <button className="button button-primary" onClick={() => navigate("/billing/new")}>
+              Create a draft invoice
+            </button>
+          )}
         </div>
       )}
       {!loading && !error && invoices.length > 0 && (
@@ -493,7 +510,13 @@ export function InvoiceDetailsPage({
   invoiceId,
   navigate,
   flash,
-}: PageProps & { invoiceId: number }) {
+  readOnly = false,
+  canViewReservation = true,
+}: PageProps & {
+  invoiceId: number;
+  readOnly?: boolean;
+  canViewReservation?: boolean;
+}) {
   const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -571,8 +594,9 @@ export function InvoiceDetailsPage({
   if (loading) return <LoadingState label="Loading invoice…" />;
   if (error && !invoice) return <ErrorState message={error} back={() => navigate("/billing")} />;
   if (!invoice) return null;
-  const canVoid = invoice.status === "issued" && invoice.paidCents === 0;
-  const canPay = ["issued", "partially_paid"].includes(invoice.status) && invoice.balanceCents > 0;
+  const canVoid = !readOnly && invoice.status === "issued" && invoice.paidCents === 0;
+  const canPay = !readOnly &&
+    ["issued", "partially_paid"].includes(invoice.status) && invoice.balanceCents > 0;
 
   return (
     <section className="page-section billing-page">
@@ -598,14 +622,21 @@ export function InvoiceDetailsPage({
         </div>
         <div className="heading-actions">
           <span className={`status-pill invoice-status ${invoice.status}`}>{statusLabel(invoice.status)}</span>
-          {invoice.status === "draft" && (
+          {!readOnly && invoice.status === "draft" && (
             <>
               <button className="button button-secondary" onClick={() => navigate(`/billing/${invoice.id}/edit`)}>Edit draft</button>
               <button className="button button-primary" onClick={() => setAction("issue")}>Issue invoice</button>
             </>
           )}
           {canVoid && <button className="button button-danger-outline" onClick={() => setAction("void")}>Void invoice</button>}
-          <button className="button button-secondary" onClick={() => navigate(`/reservations/${invoice.reservationId}`)}>Open reservation</button>
+          {canViewReservation && (
+            <button
+              className="button button-secondary"
+              onClick={() => navigate(`/reservations/${invoice.reservationId}`)}
+            >
+              Open reservation
+            </button>
+          )}
         </div>
       </div>
 

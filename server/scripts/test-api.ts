@@ -6,6 +6,7 @@ import type { AddressInfo } from "node:net";
 import { createApp } from "../src/app.js";
 import { createDatabase } from "../src/db/connection.js";
 import { runMigrations } from "../src/db/migrations.js";
+import { createTestApiClient } from "./test-api-client.js";
 
 const testDirectory = mkdtempSync(resolve(tmpdir(), "local-pms-api-test-"));
 const database = createDatabase(resolve(testDirectory, "api-test.sqlite"));
@@ -22,16 +23,7 @@ try {
   const address = server.address() as AddressInfo;
   assert.equal(address.address, "127.0.0.1");
   const baseUrl = `http://127.0.0.1:${address.port}/api`;
-
-  const request = async (path: string, method = "GET", body?: unknown) => {
-    const response = await fetch(`${baseUrl}${path}`, {
-      method,
-      headers: body === undefined ? undefined : { "content-type": "application/json" },
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
-    const data: unknown = await response.json();
-    return { status: response.status, data: data as Record<string, any> };
-  };
+  const request = await createTestApiClient(baseUrl);
 
   const health = await request("/health");
   assert.equal(health.status, 200);

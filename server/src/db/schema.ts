@@ -339,3 +339,43 @@ export const units = sqliteTable(
       .where(sql`${table.archivedAt} IS NULL`),
   ],
 );
+
+export const staffAccounts = sqliteTable(
+  "staff_accounts",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    displayName: text("display_name").notNull(),
+    username: text("username").notNull(),
+    passwordHash: text("password_hash").notNull(),
+    role: text("role", {
+      enum: ["administrator", "front_desk", "housekeeping", "accounting"],
+    }).notNull(),
+    isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    check(
+      "staff_accounts_role_check",
+      sql`${table.role} IN ('administrator', 'front_desk', 'housekeeping', 'accounting')`,
+    ),
+    check("staff_accounts_active_check", sql`${table.isActive} IN (0, 1)`),
+    uniqueIndex("staff_accounts_username_unique").on(table.username),
+  ],
+);
+
+export const authSessions = sqliteTable(
+  "auth_sessions",
+  {
+    tokenHash: text("token_hash").primaryKey(),
+    staffId: integer("staff_id")
+      .notNull()
+      .references(() => staffAccounts.id, { onDelete: "cascade" }),
+    csrfTokenHash: text("csrf_token_hash").notNull(),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    expiresAt: text("expires_at").notNull(),
+  },
+  (table) => [
+    index("auth_sessions_staff_expiry").on(table.staffId, table.expiresAt),
+  ],
+);

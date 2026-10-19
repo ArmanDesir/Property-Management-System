@@ -17,7 +17,7 @@ npm run db:migrate
 npm run dev
 ```
 
-The client runs at <http://127.0.0.1:5173> and the API at <http://127.0.0.1:3000>. Both servers bind only to `127.0.0.1`; the Vite server proxies `/api` to the local API. The app does not call cloud services or external APIs. Loopback binding limits network exposure but is not complete security; authentication is not implemented in this phase, so protect access to the laptop and its user account.
+The client runs at <http://127.0.0.1:5173> and the API at <http://127.0.0.1:3000>. Both servers bind only to `127.0.0.1`; the Vite server proxies `/api` to the local API. The app does not call cloud services or external APIs. Loopback binding limits network exposure but is not complete security; continue protecting access to the laptop and its user account.
 
 The SQLite database is stored at `data/pms.db`, outside the frontend's public directory. Set `PMS_DATABASE_PATH` to use another local file path (relative paths are resolved from the project root); paths inside `client/public` are rejected. The database and backup files are ignored by Git. Phase 2 through Phase 7 use additive migrations. Phase 4 extends the existing reservations table in place: legacy reservation IDs, dependent foreign keys, and history are preserved. Legacy reservations retain a null unit assignment because the previous schema did not track units; their reference and lifecycle state are backfilled. Phase 5 adds separate stay status and actual check-in/check-out timestamps to the existing reservations; existing rows start as not checked in, with actual timestamps left null. Phase 6 adds housekeeping status and last-cleaned timestamp columns to units; existing units start as needing cleaning, while their operational and reservation statuses remain unchanged. Phase 7 adds separate invoice, invoice-line-item, and payment tables; it does not alter or seed existing reservations, guests, or the legacy `billing_entries` table.
 
@@ -34,7 +34,8 @@ The SQLite database is stored at `data/pms.db`, outside the frontend's public di
 | `npm run test:api` | Exercise property, unit, guest, reservation, front-desk, and housekeeping endpoints against a temporary database |
 | `npm run test:billing` | Exercise invoice and manual-payment endpoints against a temporary database |
 | `npm run test:reports` | Exercise read-only reports against a temporary database with synthetic data |
-| `npm test` | Run migration, API regression, billing, and reports integration tests |
+| `npm run test:auth` | Exercise authentication, staff, and authorization against an isolated database |
+| `npm test` | Run migration, API regression, billing, reports, and access-control integration tests |
 
 ## Project layout
 
@@ -49,7 +50,33 @@ The Drizzle schema is in `server/src/db/schema.ts`; generated migrations and jou
 
 ## API
 
+Phase 9 requires a local staff account to access PMS operations. On the first launch after migration, create the initial administrator in the setup screen; no default or demo account is created. Passwords must be at least 12 characters and are stored as bcrypt hashes. Sessions use random opaque tokens with an eight-hour lifetime, HttpOnly/SameSite cookies, a CSRF token, and local Origin checks. Staff changes and deactivation invalidate existing sessions. There is no password recovery workflow; keep the laptop account and independent database backups secure.
+
+The API applies default-deny backend authorization to all supported operations:
+
+| Role | Backend access |
+| --- | --- |
+| Administrator | All supported property, unit, guest, reservation, front desk, housekeeping, invoice, report, and staff operations |
+| Front Desk | Read properties/units for booking; guest and reservation operations, front-desk dashboard, and read-only invoice views |
+| Housekeeping | Housekeeping overview and housekeeping status transitions only; responses omit guest identity and reservation reference |
+| Accounting | Invoice and payment operations plus read-only reports |
+
+The API routes below are protected by an active staff session and backend role checks, except for the explicitly public authentication and health routes: property, unit, guest, reservation, front-desk, housekeeping, invoice, report, and staff endpoints. Frontend navigation restrictions are only a usability layer; the API authorization middleware is authoritative.
+
+Public/bootstrap routes are `GET /api/health`, `GET /api/auth/status`, `POST /api/auth/setup` (only before the first staff account exists), and `POST /api/auth/login`. `GET /api/auth/me` requires a valid active session. `POST /api/auth/logout` is safe to call without a session and requires CSRF validation when a session is present. The setup status may return a short-lived, one-time bootstrap token while the staff table is empty.
+
+This installation uses local HTTP, so its session cookie cannot use the `Secure` attribute. Loopback binding, cookies, and role checks do not provide protection from malware, a compromised local account, or other local processes. Do not expose the service or treat it as a hardened multi-user network service.
+
 - `GET http://127.0.0.1:3000/api/health` — service and database status
+- `GET /api/auth/status` — indicates whether initial administrator setup is required
+- `POST /api/auth/setup` — create the first administrator using the short-lived setup token
+- `POST /api/auth/login` — sign in to a local staff account
+- `GET /api/auth/me` — current staff account
+- `POST /api/auth/logout` — end the current session
+- `GET /api/staff` — administrator-only staff listing
+- `POST /api/staff` — administrator-only staff creation
+- `PUT /api/staff/:staffId` — administrator-only staff edit (optional password replacement)
+- `PATCH /api/staff/:staffId/status` — administrator-only deactivate/reactivate
 - `GET /api/guests?status=active&q=...` — search active guests (status may be `active`, `archived`, or `all`; search checks name, email, and phone)
 - `GET /api/guests/:guestId` — read a guest profile
 - `POST /api/guests` — create a guest (requires a name and at least one email or phone number)
@@ -105,4 +132,4 @@ Reports are read-only and use inclusive `from`/`to` calendar dates with a maximu
 
 The SQLite database and backup directory are intentionally excluded from version control. Database and API tests use isolated temporary databases with synthetic data and do not write test records to the retained database. Keep independent backups of `data/` when retaining operational data matters.
 
-Guest profiles intentionally exclude government ID, passport, and payment-card details. Guest and reservation notes are stored as plain text. Guest archiving retains profile and reservation references; archived guests are filtered out by default and must be restored before a pending reservation can be confirmed. Reservation cancellation and completion retain history instead of deleting records. Loopback-only access is a network boundary, not complete security; authentication is not implemented, so protect access to the laptop and its user account.
+Guest profiles intentionally exclude government ID, passport, and payment-card details. Guest and reservation notes are stored as plain text. Guest archiving retains profile and reservation references; archived guests are filtered out by default and must be restored before a pending reservation can be confirmed. Reservation cancellation and completion retain history instead of deleting records. Phase 9 adds the additive `0007_staff_access` migration, creating only `staff_accounts` and `auth_sessions`; it does not rewrite earlier migrations or alter existing operational tables. Server startup applies pending migrations, so take and verify a backup before starting the application after an upgrade.

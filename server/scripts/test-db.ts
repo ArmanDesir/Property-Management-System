@@ -164,6 +164,25 @@ try {
     .map((row) => row.name);
   assert.ok(migratedTables.includes("reservations"));
   assert.ok(migratedTables.includes("units"));
+  assert.ok(migratedTables.includes("staff_accounts"));
+  assert.ok(migratedTables.includes("auth_sessions"));
+  assert.equal(
+    database.$client.prepare("SELECT COUNT(*) AS count FROM staff_accounts").get()?.count,
+    0,
+  );
+  assert.equal(
+    database.$client.prepare("SELECT COUNT(*) AS count FROM auth_sessions").get()?.count,
+    0,
+  );
+  assert.ok(
+    database.$client.prepare("PRAGMA foreign_key_list(auth_sessions)").all()
+      .some((foreignKey) =>
+        foreignKey.table === "staff_accounts" &&
+        foreignKey.from === "staff_id" &&
+        foreignKey.on_delete === "CASCADE"
+      ),
+  );
+  assert.deepEqual(database.$client.prepare("PRAGMA foreign_key_check").all(), []);
   assert.ok(
     database.$client.prepare("PRAGMA table_info(units)").all()
       .some((column) => column.name === "housekeeping_status"),
@@ -336,7 +355,7 @@ try {
     });
     assert.equal(
       prePhase5Database.$client.prepare("SELECT COUNT(*) AS count FROM __drizzle_migrations").get()?.count,
-      7,
+      8,
     );
     assert.equal(
       prePhase5Database.$client.prepare("SELECT COUNT(*) AS count FROM invoices").get()?.count,

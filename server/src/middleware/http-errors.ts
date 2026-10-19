@@ -27,7 +27,9 @@ export const errorHandler: ErrorRequestHandler = (error: unknown, _request, resp
   if (isDatabaseError(error, "SQLITE_CONSTRAINT_UNIQUE", 2067)) {
     const message = databaseErrorMessage(error);
     response.status(409).json({
-      error: message.includes("reservations.reservation_reference")
+      error: message.includes("staff_accounts.username")
+        ? "A staff account with that username already exists."
+        : message.includes("reservations.reservation_reference")
         ? "A reservation reference collision occurred; retry the request."
         : message.includes("invoices.invoice_number")
           ? "An invoice number collision occurred; retry the request."
