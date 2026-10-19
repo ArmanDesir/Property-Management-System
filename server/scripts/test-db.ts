@@ -166,6 +166,16 @@ try {
   assert.ok(migratedTables.includes("units"));
   assert.ok(migratedTables.includes("staff_accounts"));
   assert.ok(migratedTables.includes("auth_sessions"));
+  assert.ok(migratedTables.includes("maintenance_requests"));
+  assert.ok(migratedTables.includes("maintenance_history"));
+  assert.equal(
+    database.$client.prepare("SELECT COUNT(*) AS count FROM maintenance_requests").get()?.count,
+    0,
+  );
+  assert.equal(
+    database.$client.prepare("SELECT COUNT(*) AS count FROM maintenance_history").get()?.count,
+    0,
+  );
   assert.equal(
     database.$client.prepare("SELECT COUNT(*) AS count FROM staff_accounts").get()?.count,
     0,
@@ -180,6 +190,30 @@ try {
         foreignKey.table === "staff_accounts" &&
         foreignKey.from === "staff_id" &&
         foreignKey.on_delete === "CASCADE"
+      ),
+  );
+  assert.ok(
+    database.$client.prepare("PRAGMA foreign_key_list(maintenance_requests)").all()
+      .some((foreignKey) =>
+        foreignKey.table === "properties" &&
+        foreignKey.from === "property_id" &&
+        foreignKey.on_delete === "RESTRICT"
+      ),
+  );
+  assert.ok(
+    database.$client.prepare("PRAGMA foreign_key_list(maintenance_requests)").all()
+      .some((foreignKey) =>
+        foreignKey.table === "units" &&
+        foreignKey.from === "unit_id" &&
+        foreignKey.on_delete === "RESTRICT"
+      ),
+  );
+  assert.ok(
+    database.$client.prepare("PRAGMA foreign_key_list(maintenance_requests)").all()
+      .some((foreignKey) =>
+        foreignKey.table === "staff_accounts" &&
+        foreignKey.from === "assigned_staff_id" &&
+        foreignKey.on_delete === "SET NULL"
       ),
   );
   assert.deepEqual(database.$client.prepare("PRAGMA foreign_key_check").all(), []);
@@ -355,7 +389,7 @@ try {
     });
     assert.equal(
       prePhase5Database.$client.prepare("SELECT COUNT(*) AS count FROM __drizzle_migrations").get()?.count,
-      8,
+      9,
     );
     assert.equal(
       prePhase5Database.$client.prepare("SELECT COUNT(*) AS count FROM invoices").get()?.count,
@@ -402,7 +436,117 @@ try {
     prePhase5Database.$client.close();
   }
 
-  console.log("Additive migration, preserved unit/reservation records, repeat safety, and data integrity tests passed.");
+  const prePhase10MigrationsDirectory = resolve(testDirectory, "pre-phase10-migrations");
+  const prePhase10MetaDirectory = resolve(prePhase10MigrationsDirectory, "meta");
+  mkdirSync(prePhase10MetaDirectory, { recursive: true });
+  const prePhase10Tags = [
+    "0000_initial",
+    "0001_property_units",
+    "0002_guest_management",
+    "0003_reservations",
+    "0004_front_desk",
+    "0005_housekeeping",
+    "0006_billing_invoicing",
+    "0007_staff_access",
+  ];
+  for (const tag of prePhase10Tags) {
+    copyFileSync(
+      resolve(migrationsFolder, `${tag}.sql`),
+      resolve(prePhase10MigrationsDirectory, `${tag}.sql`),
+    );
+    copyFileSync(
+      resolve(migrationsFolder, `meta/${tag.slice(0, 4)}_snapshot.json`),
+      resolve(prePhase10MetaDirectory, `${tag.slice(0, 4)}_snapshot.json`),
+    );
+  }
+  writeFileSync(
+    resolve(prePhase10MetaDirectory, "_journal.json"),
+    JSON.stringify({ ...currentJournal, entries: currentJournal.entries.slice(0, 8) }, null, 2),
+  );
+  const prePhase10Database = createDatabase(resolve(testDirectory, "pre-phase10-existing-data.sqlite"));
+  try {
+    await runMigrations(prePhase10Database, prePhase10MigrationsDirectory);
+    const client = prePhase10Database.$client;
+    client.prepare("INSERT INTO properties (name) VALUES (?)").run("Preserved Phase 9 Property");
+    client.prepare(`
+      INSERT INTO units (property_id, name, capacity, base_nightly_rate_cents)
+      VALUES (1, 'Preserved Phase 9 Unit', 2, 15000)
+    `).run();
+    client.prepare("INSERT INTO guests (first_name, last_name) VALUES (?, ?)").run(
+      "Synthetic",
+      "Preserved Guest",
+    );
+    client.prepare(`
+      INSERT INTO reservations (
+        reservation_reference, property_id, guest_id, unit_id, check_in, check_out
+      ) VALUES ('SYN-PRESERVE-RES-01', 1, 1, 1, '2035-01-01', '2035-01-02')
+    `).run();
+    client.prepare(`
+      INSERT INTO invoices (
+        invoice_number, reservation_id, issue_date, currency,
+        subtotal_cents, total_cents
+      ) VALUES ('SYN-PRESERVE-01', 1, '2034-12-01', 'USD', 1000, 1000)
+    `).run();
+    client.prepare(`
+      INSERT INTO invoice_line_items (
+        invoice_id, description, quantity, unit_price_cents, line_total_cents, position
+      ) VALUES (1, 'Synthetic preserved line', 1, 1000, 1000, 0)
+    `).run();
+    client.prepare("UPDATE invoices SET status = 'issued', issued_at = ? WHERE id = 1")
+      .run("2034-12-01T00:00:00.000Z");
+    client.prepare(`
+      INSERT INTO payments (
+        invoice_id, payment_date, amount_cents, method, idempotency_key
+      ) VALUES (1, '2034-12-02T00:00:00.000Z', 250, 'cash', 'synthetic-preserve-payment')
+    `).run();
+    client.prepare("INSERT INTO housekeeping_tasks (property_id, title) VALUES (1, ?)").run(
+      "Synthetic preserved housekeeping task",
+    );
+    client.prepare(`
+      INSERT INTO staff_accounts (display_name, username, password_hash, role)
+      VALUES ('Synthetic Preserved Staff', 'preserved-staff', 'synthetic-bcrypt-hash', 'administrator')
+    `).run();
+    client.prepare(`
+      INSERT INTO auth_sessions (token_hash, staff_id, csrf_token_hash, expires_at)
+      VALUES (?, 1, ?, '2036-01-01T00:00:00.000Z')
+    `).run("a".repeat(64), "b".repeat(64));
+
+    await runMigrations(prePhase10Database, migrationsFolder);
+    const expectedPreservedCounts = {
+      properties: 1,
+      units: 1,
+      guests: 1,
+      reservations: 1,
+      invoices: 1,
+      invoice_line_items: 1,
+      payments: 1,
+      housekeeping_tasks: 1,
+      staff_accounts: 1,
+      auth_sessions: 1,
+      maintenance_requests: 0,
+      maintenance_history: 0,
+    };
+    for (const [table, expected] of Object.entries(expectedPreservedCounts)) {
+      assert.equal(
+        client.prepare(`SELECT COUNT(*) AS count FROM "${table}"`).get()?.count,
+        expected,
+        `${table} rows should survive the additive maintenance migration`,
+      );
+    }
+    assert.equal(
+      client.prepare("SELECT name FROM properties WHERE id = 1").get()?.name,
+      "Preserved Phase 9 Property",
+    );
+    assert.equal(
+      client.prepare("SELECT status FROM invoices WHERE id = 1").get()?.status,
+      "issued",
+    );
+    assert.deepEqual(client.prepare("PRAGMA foreign_key_check").all(), []);
+  } finally {
+    prePhase10Database.$client.close();
+  }
+
+  console.log("Additive migration, prior-version preservation, repeat safety, and data integrity tests passed.");
 } finally {
   database.$client.close();
   rmSync(testDirectory, { recursive: true, force: true });

@@ -57,6 +57,13 @@
       "when": 1792368000000,
       "tag": "0007_staff_access",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1792390397965,
+      "tag": "0008_magical_lady_mastermind",
+      "breakpoints": true
     }
   ]
 }

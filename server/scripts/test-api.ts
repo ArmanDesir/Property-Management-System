@@ -772,14 +772,15 @@ try {
     "PATCH",
     { status: "cleaning" },
   );
-  assert.equal(cleanMaintenanceUnit.data.unit.operationalStatus, "maintenance");
-  const completedMaintenanceCleaning = await request(
-    `/housekeeping/units/${overdueUnitId}/status`,
-    "PATCH",
-    { status: "clean" },
+  assert.equal(cleanMaintenanceUnit.status, 409);
+  const maintenanceHousekeepingState = await request(
+    `/housekeeping?propertyId=${propertyId}`,
   );
-  assert.equal(completedMaintenanceCleaning.data.unit.housekeepingStatus, "clean");
-  assert.equal(completedMaintenanceCleaning.data.unit.operationalStatus, "maintenance");
+  const maintenanceUnit = maintenanceHousekeepingState.data.housekeeping.units.find(
+    (unit: { id: number }) => unit.id === overdueUnitId,
+  );
+  assert.equal(maintenanceUnit.housekeepingStatus, "dirty");
+  assert.equal(maintenanceUnit.operationalStatus, "maintenance");
   const cleanedHistory = await request(`/reservations/${overdueReservationId}`);
   assert.equal(cleanedHistory.data.reservation.status, "confirmed");
   assert.equal(cleanedHistory.data.reservation.stayStatus, "checked_out");

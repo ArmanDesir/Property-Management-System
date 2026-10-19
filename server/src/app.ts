@@ -11,6 +11,7 @@ import { createReservationsRouter } from "./routes/reservations.js";
 import { createReportsRouter } from "./routes/reports.js";
 import { createAuthRouter } from "./routes/auth.js";
 import { createStaffRouter } from "./routes/staff.js";
+import { createMaintenanceRouter } from "./routes/maintenance.js";
 import {
   attachAuthenticatedStaff,
   requireAuthenticatedAndAuthorized,
@@ -32,6 +33,7 @@ export function createApp(database: PmsDatabase) {
   app.use("/api/reservations", createReservationsRouter(database));
   app.use("/api/reports", createReportsRouter(database));
   app.use("/api/staff", createStaffRouter(database));
+  app.use("/api/maintenance", createMaintenanceRouter(database));
   app.use(errorHandler);
 
   return app;

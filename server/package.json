@@ -16,6 +16,7 @@
     "test:db": "tsx scripts/test-db.ts",
     "test:api": "tsx scripts/test-api.ts",
     "test:auth": "tsx scripts/test-auth.ts",
+    "test:maintenance": "tsx scripts/test-maintenance.ts",
     "test:billing": "tsx scripts/test-billing.ts",
     "test:reports": "tsx scripts/test-reports.ts"
   },

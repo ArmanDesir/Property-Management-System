@@ -122,7 +122,7 @@ export function updateHousekeepingStatus(
 ): HousekeepingUnit {
   return withImmediateTransaction(database, (client) => {
     const existing = client.prepare(`
-      SELECT id, housekeeping_status, archived_at
+      SELECT id, housekeeping_status, archived_at, status
       FROM units
       WHERE id = ?
     `).get(unitId);
@@ -146,6 +146,9 @@ export function updateHousekeepingStatus(
     }
 
     if (status === "cleaning" || status === "clean") {
+      if (existing.status !== "active") {
+        throw new HttpError(409, "An inactive or maintenance unit cannot be started or marked clean.");
+      }
       const occupied = client.prepare(`
         SELECT 1 AS occupied
         FROM reservations

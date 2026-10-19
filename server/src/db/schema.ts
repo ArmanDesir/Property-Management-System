@@ -379,3 +379,98 @@ export const authSessions = sqliteTable(
     index("auth_sessions_staff_expiry").on(table.staffId, table.expiresAt),
   ],
 );
+
+export const maintenanceRequests = sqliteTable(
+  "maintenance_requests",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    requestCode: text("request_code").notNull(),
+    propertyId: integer("property_id")
+      .notNull()
+      .references(() => properties.id, { onDelete: "restrict" }),
+    unitId: integer("unit_id").references(() => units.id, { onDelete: "restrict" }),
+    title: text("title").notNull(),
+    description: text("description").notNull(),
+    category: text("category", {
+      enum: [
+        "plumbing",
+        "electrical",
+        "hvac",
+        "appliance",
+        "furniture",
+        "structural",
+        "cleaning_related",
+        "other",
+      ],
+    }).notNull(),
+    priority: text("priority", {
+      enum: ["low", "normal", "high", "urgent"],
+    }).notNull().default("normal"),
+    status: text("status", {
+      enum: ["open", "in_progress", "awaiting_parts", "completed", "cancelled"],
+    }).notNull().default("open"),
+    reportedAt: text("reported_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    targetCompletionDate: text("target_completion_date"),
+    assignedStaffId: integer("assigned_staff_id").references(() => staffAccounts.id, {
+      onDelete: "set null",
+    }),
+    completedAt: text("completed_at"),
+    resolutionNotes: text("resolution_notes"),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    check(
+      "maintenance_category_check",
+      sql`${table.category} IN ('plumbing', 'electrical', 'hvac', 'appliance', 'furniture', 'structural', 'cleaning_related', 'other')`,
+    ),
+    check(
+      "maintenance_priority_check",
+      sql`${table.priority} IN ('low', 'normal', 'high', 'urgent')`,
+    ),
+    check(
+      "maintenance_status_check",
+      sql`${table.status} IN ('open', 'in_progress', 'awaiting_parts', 'completed', 'cancelled')`,
+    ),
+    check("maintenance_title_nonempty", sql`length(trim(${table.title})) > 0`),
+    check("maintenance_description_nonempty", sql`length(trim(${table.description})) > 0`),
+    uniqueIndex("maintenance_request_code_unique").on(table.requestCode),
+    index("maintenance_property_status").on(table.propertyId, table.status),
+    index("maintenance_unit_status").on(table.unitId, table.status),
+    index("maintenance_status_priority_target")
+      .on(table.status, table.priority, table.targetCompletionDate),
+    index("maintenance_assigned_staff").on(table.assignedStaffId, table.status),
+  ],
+);
+
+export const maintenanceHistory = sqliteTable(
+  "maintenance_history",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    requestId: integer("request_id")
+      .notNull()
+      .references(() => maintenanceRequests.id, { onDelete: "cascade" }),
+    fromStatus: text("from_status", {
+      enum: ["open", "in_progress", "awaiting_parts", "completed", "cancelled"],
+    }),
+    toStatus: text("to_status", {
+      enum: ["open", "in_progress", "awaiting_parts", "completed", "cancelled"],
+    }).notNull(),
+    changedByStaffId: integer("changed_by_staff_id").references(() => staffAccounts.id, {
+      onDelete: "set null",
+    }),
+    note: text("note"),
+    changedAt: text("changed_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    check(
+      "maintenance_history_from_status_check",
+      sql`${table.fromStatus} IS NULL OR ${table.fromStatus} IN ('open', 'in_progress', 'awaiting_parts', 'completed', 'cancelled')`,
+    ),
+    check(
+      "maintenance_history_to_status_check",
+      sql`${table.toStatus} IN ('open', 'in_progress', 'awaiting_parts', 'completed', 'cancelled')`,
+    ),
+    index("maintenance_history_request_time").on(table.requestId, table.changedAt, table.id),
+  ],
+);

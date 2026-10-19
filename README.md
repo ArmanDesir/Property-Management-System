@@ -35,7 +35,8 @@ The SQLite database is stored at `data/pms.db`, outside the frontend's public di
 | `npm run test:billing` | Exercise invoice and manual-payment endpoints against a temporary database |
 | `npm run test:reports` | Exercise read-only reports against a temporary database with synthetic data |
 | `npm run test:auth` | Exercise authentication, staff, and authorization against an isolated database |
-| `npm test` | Run migration, API regression, billing, reports, and access-control integration tests |
+| `npm run test:maintenance` | Exercise maintenance workflows and role controls against an isolated database |
+| `npm test` | Run migration, API regression, billing, reports, access-control, and maintenance integration tests |
 
 ## Project layout
 
@@ -46,7 +47,7 @@ data/       Local database files (not committed)
 backups/    Local backup copies (not committed)
 ```
 
-The Drizzle schema is in `server/src/db/schema.ts`; generated migrations and journal are under `server/src/db/migrations`. Phase 2 uses an additive SQLite migration so existing property records and reservation references remain intact. Units reference properties with `ON DELETE RESTRICT`; unit names are unique per property, case-insensitively, while not archived. Server startup applies pending migrations. Review future migration SQL before applying it to retained local data.
+The Drizzle schema is in `server/src/db/schema.ts`; generated migrations and journal are under `server/src/db/migrations`. Phase 2 uses an additive SQLite migration so existing property records and reservation references remain intact. Units reference properties with `ON DELETE RESTRICT`; unit names are unique per property, case-insensitively, while not archived. Phase 10 adds maintenance request and status-history tables in migration `0008_magical_lady_mastermind`; it does not rewrite prior migrations. Server startup applies pending migrations. Review future migration SQL before applying it to retained local data.
 
 ## API
 
@@ -57,11 +58,11 @@ The API applies default-deny backend authorization to all supported operations:
 | Role | Backend access |
 | --- | --- |
 | Administrator | All supported property, unit, guest, reservation, front desk, housekeeping, invoice, report, and staff operations |
-| Front Desk | Read properties/units for booking; guest and reservation operations, front-desk dashboard, and read-only invoice views |
-| Housekeeping | Housekeeping overview and housekeeping status transitions only; responses omit guest identity and reservation reference |
-| Accounting | Invoice and payment operations plus read-only reports |
+| Front Desk | Read properties/units for booking; guest and reservation operations, front-desk dashboard, read-only invoice views, and read-only maintenance views plus request creation; cannot edit, assign, or change maintenance status |
+| Housekeeping | Housekeeping overview and housekeeping status transitions; read maintenance information and create cleaning-related requests only; cannot edit, assign, or change maintenance status |
+| Accounting | Invoice and payment operations plus read-only reports; no maintenance access |
 
-The API routes below are protected by an active staff session and backend role checks, except for the explicitly public authentication and health routes: property, unit, guest, reservation, front-desk, housekeeping, invoice, report, and staff endpoints. Frontend navigation restrictions are only a usability layer; the API authorization middleware is authoritative.
+The API routes below are protected by an active staff session and backend role checks, except for the explicitly public authentication and health routes: property, unit, guest, reservation, front-desk, housekeeping, invoice, report, staff, and maintenance endpoints. Frontend navigation restrictions are only a usability layer; the API authorization middleware is authoritative.
 
 Public/bootstrap routes are `GET /api/health`, `GET /api/auth/status`, `POST /api/auth/setup` (only before the first staff account exists), and `POST /api/auth/login`. `GET /api/auth/me` requires a valid active session. `POST /api/auth/logout` is safe to call without a session and requires CSRF validation when a session is present. The setup status may return a short-lived, one-time bootstrap token while the staff table is empty.
 
@@ -97,6 +98,13 @@ This installation uses local HTTP, so its session cookie cannot use the `Secure`
 - `PATCH /api/properties/:propertyId/units/:unitId/status` — change status or restore an archived unit
 - `GET /api/housekeeping?propertyId=...&status=dirty|cleaning|clean|all` — housekeeping summary and unit list, optionally filtered by active property and cleaning status
 - `PATCH /api/housekeeping/units/:unitId/status` — transition housekeeping state among dirty, cleaning, and clean
+- `GET /api/maintenance/dashboard` — current maintenance totals, breakdowns, and the latest completed requests
+- `GET /api/maintenance/options` — active properties and units; active staff assignment choices are administrator-only
+- `GET /api/maintenance?q=...&propertyId=...&unitId=...&status=...&priority=...&category=...&overdue=true&sort=updated&order=desc&limit=50&offset=0` — search, filter, sort, and paginate requests
+- `POST /api/maintenance` — create a request; Housekeeping may create cleaning-related requests only
+- `GET /api/maintenance/:requestId` — request details and status history
+- `PUT /api/maintenance/:requestId` — administrator-only edit of an open or in-progress request
+- `PATCH /api/maintenance/:requestId/status` — administrator-only valid status transition
 - `GET /api/invoices/reservations?q=...` — search existing reservations for explicit invoice selection
 - `GET /api/invoices/reservations/:reservationId` — read the selected reservation summary for invoice review
 - `GET /api/invoices` — list/search invoices with status and reservation filters
@@ -123,6 +131,8 @@ This installation uses local HTTP, so its session cookie cannot use the `Secure`
 - `DELETE /api/reservations/:reservationId` — safely cancel an active reservation; it does not delete history
 
 Reservations use half-open stay intervals (`check_in <= date < check_out`). Pending and confirmed reservations hold inventory; cancelled and completed records do not. Creation, confirmation, and edits validate unit/property/guest eligibility, capacity, and overlap inside a synchronous SQLite `BEGIN IMMEDIATE` transaction. Database triggers independently reject invalid relationships and conflicting active reservations. Check-in requires a confirmed reservation, an eligible date, and an active property, guest, and unit; an active stay occupies its assigned unit until check-out. Reservation lifecycle, occupancy, housekeeping, and operational unit status are distinct. Housekeeping progresses through dirty → cleaning → clean, with cleaning able to return to dirty; clean records the completion timestamp. Cleaning actions cannot mark an occupied unit clean or start cleaning it, and do not change the unit's operational status. A checked-out stay marks its unit dirty atomically while retaining the reservation and checkout timestamp. A unit under maintenance remains unavailable after housekeeping is completed; housekeeping status does not override reservation availability or overlap rules. SQLite's busy timeout is five seconds; a lock timeout is reported as a retryable `503`. Reservation references are generated locally and kept unique.
+
+Maintenance requests use categories `plumbing`, `electrical`, `hvac`, `appliance`, `furniture`, `structural`, `cleaning_related`, and `other`; priorities `low`, `normal`, `high`, and `urgent`; and statuses `open`, `in_progress`, `awaiting_parts`, `completed`, and `cancelled`. Transitions are open → in progress/cancelled, in progress → awaiting parts/completed/cancelled, and awaiting parts → in progress/completed/cancelled. Completed and cancelled requests are terminal. Dashboard totals are current snapshots; overdue means a nonterminal request whose target completion date is before the current UTC date, and the completed list contains at most the latest 10 records. Every creation and status transition is recorded in maintenance history. Finishing a request never changes a unit's operational or housekeeping status. Maintenance requests do not yet implement request-linked downtime dates, reservation-conflict checks, or a unit take-out-of-service workflow; use the existing authorized unit status workflow separately and resolve reservation conflicts explicitly.
 
 Billing requires a user to explicitly select an existing reservation; no invoice is created automatically. Draft charges use integer minor currency units, whole-number quantities, and a manually entered tax rate in basis points. The API computes totals and rounds tax to the nearest cent, half up. Invoice currency is inherited from the reservation without conversion. Issued invoice lines and totals are immutable; `partially_paid` and `paid` are derived from recorded payment totals. Payments are bookkeeping records only (no gateway, bank integration, refunds, or reversals); they are idempotent, cannot exceed the outstanding balance, and are retained as immutable history. The existing `billing_entries` table is legacy storage and is not used by the invoice workflow.
 

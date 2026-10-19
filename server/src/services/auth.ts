@@ -375,18 +375,27 @@ export function hasPermission(role: StaffRole, method: string, path: string): bo
     (method === "POST" && path === "/api/staff") ||
     (method === "PUT" && /^\/api\/staff\/[^/]+$/.test(path)) ||
     (method === "PATCH" && /^\/api\/staff\/[^/]+\/status$/.test(path));
+  const isMaintenanceRead = method === "GET" &&
+    /^\/api\/maintenance(?:\/dashboard|\/[^/]+)?$/.test(path);
+  const isMaintenanceCreate = method === "POST" && path === "/api/maintenance";
+  const isMaintenanceAdminWrite =
+    (method === "PUT" && /^\/api\/maintenance\/[^/]+$/.test(path)) ||
+    (method === "PATCH" && /^\/api\/maintenance\/[^/]+\/status$/.test(path));
   const supportedOperation = isPropertiesRead || isPropertyWrite || isGuest ||
     isReservation || isFrontDesk || isHousekeepingRead || isHousekeepingWrite ||
-    isInvoiceRead || isInvoiceWrite || isReport || isStaff;
+    isInvoiceRead || isInvoiceWrite || isReport || isStaff || isMaintenanceRead ||
+    isMaintenanceCreate || isMaintenanceAdminWrite;
   if (!supportedOperation) return false;
 
   switch (role) {
     case "administrator":
       return true;
     case "front_desk":
-      return isPropertiesRead || isGuest || isReservation || isFrontDesk || isInvoiceRead;
+      return isPropertiesRead || isGuest || isReservation || isFrontDesk ||
+        isInvoiceRead || isMaintenanceRead || isMaintenanceCreate;
     case "housekeeping":
-      return isHousekeepingRead || isHousekeepingWrite;
+      return isHousekeepingRead || isHousekeepingWrite ||
+        isMaintenanceRead || isMaintenanceCreate;
     case "accounting":
       return (
         isInvoiceRead ||

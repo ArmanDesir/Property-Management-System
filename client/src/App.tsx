@@ -27,6 +27,7 @@ import {
 import { ReportsPage } from "./features/reports/ReportsPage";
 import { AuthPage, type StaffUser } from "./features/auth/AuthPage";
 import { StaffPage } from "./features/staff/StaffPage";
+import { MaintenancePage } from "./features/maintenance/MaintenancePage";
 import { ApiRequestError, apiRequest } from "./lib/api";
 import "./App.css";
 
@@ -54,6 +55,7 @@ type Route =
   | { name: "edit-invoice"; invoiceId: number }
   | { name: "reports" }
   | { name: "staff" }
+  | { name: "maintenance" }
   | { name: "new-reservation" }
   | { name: "reservation-details"; reservationId: number }
   | { name: "edit-reservation"; reservationId: number }
@@ -236,6 +238,9 @@ function App() {
           {role === "administrator" && (
             <NavLink path="/staff" label="Staff" active={route.name === "staff"} navigate={navigate} />
           )}
+          {role !== "accounting" && (
+            <NavLink path="/maintenance" label="Maintenance" active={route.name === "maintenance"} navigate={navigate} />
+          )}
         </nav>
         <div className="staff-session">
           <span className="staff-session-name">{staffUser.displayName}</span>
@@ -341,6 +346,9 @@ function App() {
       )}
       {route.name === "staff" && (
         <StaffPage currentUserId={staffUser.id} {...pageProps} />
+      )}
+      {route.name === "maintenance" && (
+        <MaintenancePage role={role} {...pageProps} />
       )}
       {route.name === "edit-invoice" && (
         <InvoiceFormPage {...pageProps} invoiceId={route.invoiceId} />
@@ -489,8 +497,14 @@ function Dashboard({
               "Review reservations, occupancy, housekeeping, and billing trends.",
               "▤",
             ],
+            [
+              "08",
+              "Maintenance",
+              "Track property repairs, priorities, assignments, and progress.",
+              "⚒",
+            ],
           ].filter(([, title]) => canAccessDashboardTile(role, title)).map(([number, title, description, icon]) =>
-            title === "Guests" || title === "Reservations" || title === "Front Desk" || title === "Housekeeping" || title === "Billing" || title === "Reports" ? (
+            title === "Guests" || title === "Reservations" || title === "Front Desk" || title === "Housekeeping" || title === "Billing" || title === "Reports" || title === "Maintenance" ? (
               <button
                 className="area-card area-card-button"
                 key={title}
@@ -505,7 +519,9 @@ function Dashboard({
                           ? "/housekeeping"
                           : title === "Billing"
                             ? "/billing"
-                            : "/reports",
+                            : title === "Reports"
+                              ? "/reports"
+                              : "/maintenance",
                 )}
               >
                 <span className="card-top">
@@ -552,6 +568,7 @@ function resolveRoute(path: string): Route {
   if (path === "/billing") return { name: "billing" };
   if (path === "/reports") return { name: "reports" };
   if (path === "/staff") return { name: "staff" };
+  if (path === "/maintenance") return { name: "maintenance" };
   if (path === "/billing/new") return { name: "new-invoice" };
   if (path === "/reservations/new") return { name: "new-reservation" };
 
@@ -619,9 +636,10 @@ function canAccessRoute(route: Route, role: StaffUser["role"]): boolean {
       "edit-reservation",
       "billing",
       "invoice-details",
+      "maintenance",
     ].includes(route.name);
   }
-  if (role === "housekeeping") return route.name === "housekeeping";
+  if (role === "housekeeping") return route.name === "housekeeping" || route.name === "maintenance";
   return [
     "billing",
     "new-invoice",
@@ -637,9 +655,9 @@ function canAccessDashboardTile(
 ): boolean {
   if (role === "administrator") return true;
   if (role === "front_desk") {
-    return ["Front Desk", "Reservations", "Guests", "Billing"].includes(title);
+    return ["Front Desk", "Reservations", "Guests", "Billing", "Maintenance"].includes(title);
   }
-  if (role === "housekeeping") return title === "Housekeeping";
+  if (role === "housekeeping") return title === "Housekeeping" || title === "Maintenance";
   return title === "Billing" || title === "Reports";
 }
 
