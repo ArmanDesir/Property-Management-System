@@ -1,0 +1,169 @@
+.room-calendar-page {
+  display: grid;
+  gap: 1.1rem;
+}
+
+.room-calendar-controls,
+.room-stay-search,
+.room-calendar-legend,
+.room-period-nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 0.75rem;
+}
+
+.room-calendar-controls,
+.room-stay-search {
+  padding: 1rem;
+  border: 1px solid var(--line, #dedbd4);
+  border-radius: 0.9rem;
+  background: var(--surface, #fff);
+}
+
+.room-calendar-controls label,
+.room-stay-search label {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.room-calendar-controls input,
+.room-calendar-controls select,
+.room-stay-search input {
+  min-height: 2.55rem;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--line, #dedbd4);
+  border-radius: 0.55rem;
+  background: #fff;
+  font: inherit;
+}
+
+.room-period-nav {
+  align-items: center;
+  margin-left: auto;
+}
+
+.room-period-nav > span {
+  min-width: 10rem;
+  text-align: center;
+  font-weight: 600;
+}
+
+.room-summary {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.7rem;
+}
+
+.room-summary article {
+  display: grid;
+  gap: 0.3rem;
+  padding: 0.9rem;
+  border: 1px solid var(--line, #dedbd4);
+  border-radius: 0.75rem;
+  background: var(--surface, #fff);
+}
+
+.room-calendar-legend {
+  align-items: center;
+  color: var(--ink-soft, #5d625e);
+  font-size: 0.85rem;
+}
+
+.room-calendar-legend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.room-calendar-scroll {
+  max-width: 100%;
+  overflow: auto;
+  border: 1px solid var(--line, #dedbd4);
+  border-radius: 0.8rem;
+  background: var(--surface, #fff);
+}
+
+.room-calendar-grid {
+  width: 100%;
+  min-width: 760px;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.room-calendar-grid th,
+.room-calendar-grid td {
+  padding: 0.65rem;
+  border-right: 1px solid #e8e6e0;
+  border-bottom: 1px solid #e8e6e0;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.room-calendar-grid thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #f5f4f0;
+}
+
+.room-calendar-grid th:first-child {
+  min-width: 11rem;
+  text-align: left;
+}
+
+.room-calendar-grid tbody th {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: #fff;
+}
+
+.room-calendar-grid tbody th strong,
+.room-calendar-grid tbody th small {
+  display: block;
+}
+
+.room-calendar-grid tbody th small {
+  margin-top: 0.2rem;
+  color: var(--ink-soft, #5d625e);
+  font-size: 0.75rem;
+  font-weight: 400;
+}
+
+.room-calendar-grid .selected-date {
+  background: #eef2e9;
+}
+
+.room-night {
+  display: inline-flex;
+  min-width: 4.4rem;
+  justify-content: center;
+  padding: 0.3rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.73rem;
+  font-style: normal;
+  white-space: nowrap;
+}
+
+.room-night.available { color: #285b39; background: #e3f2e8; }
+.room-night.reserved { color: #6d4c11; background: #fbefcf; }
+.room-night.occupied { color: #3e4e7b; background: #e6eaf8; }
+.room-night.unavailable { color: #863a2b; background: #f8e4df; }
+
+.stay-available { color: #285b39 !important; font-weight: 700 !important; }
+.stay-unavailable { color: #863a2b !important; font-weight: 700 !important; }
+
+.room-reserve {
+  margin-top: 0.35rem;
+  padding: 0.25rem 0.4rem;
+  font-size: 0.75rem;
+}
+
+.room-refresh { justify-self: start; }
+
+@media (max-width: 720px) {
+  .room-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .room-period-nav { margin-left: 0; }
+  .room-period-nav > span { min-width: auto; }
+}

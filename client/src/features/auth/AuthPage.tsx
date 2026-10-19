@@ -6,10 +6,11 @@ export interface StaffUser {
   id: number;
   displayName: string;
   username: string;
-  role: "administrator" | "front_desk" | "housekeeping" | "accounting";
+  role: "administrator" | "property_manager" | "front_desk" | "housekeeping" | "accounting";
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
+  propertyIds?: number[];
 }
 
 export function AuthPage({

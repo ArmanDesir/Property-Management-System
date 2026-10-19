@@ -163,6 +163,7 @@ export function rejectFields(
 export function staffRoleValue(value: unknown) {
   return enumValue(value, "Role", [
     "administrator",
+    "property_manager",
     "front_desk",
     "housekeeping",
     "accounting",

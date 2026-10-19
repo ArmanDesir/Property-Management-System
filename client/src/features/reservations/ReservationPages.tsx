@@ -313,6 +313,8 @@ export function ReservationFormPage({
           const requestedPropertyId = query.get("propertyId");
           const requestedGuestId = query.get("guestId");
           const requestedUnitId = query.get("unitId");
+          const requestedCheckIn = query.get("checkIn") ?? "";
+          const requestedCheckOut = query.get("checkOut") ?? "";
           const selectedProperty = propertyResult.properties.find(
             (property) => String(property.id) === requestedPropertyId,
           );
@@ -324,6 +326,8 @@ export function ReservationFormPage({
             propertyId: String(selectedProperty?.id ?? propertyResult.properties[0]?.id ?? ""),
             unitId: requestedUnitId ?? "",
             guestId: String(selectedGuest?.id ?? guestChoices[0]?.id ?? ""),
+            checkIn: requestedCheckIn,
+            checkOut: requestedCheckOut,
           }));
         }
       } catch (reason) {

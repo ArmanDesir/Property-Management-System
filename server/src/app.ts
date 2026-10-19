@@ -12,6 +12,9 @@ import { createReportsRouter } from "./routes/reports.js";
 import { createAuthRouter } from "./routes/auth.js";
 import { createStaffRouter } from "./routes/staff.js";
 import { createMaintenanceRouter } from "./routes/maintenance.js";
+import { createTeamTasksRouter } from "./routes/team-tasks.js";
+import { createRoomAvailabilityRouter } from "./routes/room-availability.js";
+import { createManagerRouter } from "./routes/manager.js";
 import {
   attachAuthenticatedStaff,
   requireAuthenticatedAndAuthorized,
@@ -34,6 +37,9 @@ export function createApp(database: PmsDatabase) {
   app.use("/api/reports", createReportsRouter(database));
   app.use("/api/staff", createStaffRouter(database));
   app.use("/api/maintenance", createMaintenanceRouter(database));
+  app.use("/api/team-tasks", createTeamTasksRouter(database));
+  app.use("/api/room-availability", createRoomAvailabilityRouter(database));
+  app.use("/api/manager", createManagerRouter(database));
   app.use(errorHandler);
 
   return app;

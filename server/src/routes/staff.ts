@@ -1,7 +1,12 @@
 import { Router } from "express";
 import type { PmsDatabase } from "../db/connection.js";
 import { asyncHandler, HttpError } from "../middleware/http-errors.js";
-import { parseRecordId, requireObject, requiredText } from "../services/validation.js";
+import {
+  parseRecordId,
+  positiveInteger,
+  requireObject,
+  requiredText,
+} from "../services/validation.js";
 import {
   createStaff,
   listStaff,
@@ -26,12 +31,13 @@ export function createStaffRouter(database: PmsDatabase): Router {
     "/",
     asyncHandler(async (request, response) => {
       const body = requireObject(request.body);
-      rejectFields(body, new Set(["displayName", "username", "role", "password"]));
+      rejectFields(body, new Set(["displayName", "username", "role", "password", "propertyIds"]));
       const staff = await createStaff(database, {
         displayName: requiredText(body.displayName, "Display name", 100),
         username: usernameValue(body.username),
         role: staffRoleValue(body.role),
         password: passwordValue(body.password),
+        propertyIds: propertyIdsValue(body.propertyIds),
       });
       response.status(201).json({ staff });
     }),
@@ -41,11 +47,12 @@ export function createStaffRouter(database: PmsDatabase): Router {
     "/:staffId",
     asyncHandler(async (request, response) => {
       const body = requireObject(request.body);
-      rejectFields(body, new Set(["displayName", "username", "role", "password"]));
+      rejectFields(body, new Set(["displayName", "username", "role", "password", "propertyIds"]));
       const input = {
         displayName: requiredText(body.displayName, "Display name", 100),
         username: usernameValue(body.username),
         role: staffRoleValue(body.role),
+        propertyIds: propertyIdsValue(body.propertyIds),
         ...(body.password === undefined || body.password === ""
           ? {}
           : { password: passwordValue(body.password) }),
@@ -66,6 +73,14 @@ export function createStaffRouter(database: PmsDatabase): Router {
       rejectFields(body, new Set(["isActive"]));
       if (typeof body.isActive !== "boolean") {
         throw new HttpError(400, "Active status must be a boolean.");
+      }
+
+      function propertyIdsValue(value: unknown): number[] {
+        if (value === undefined) return [];
+        if (!Array.isArray(value)) throw new HttpError(400, "Property IDs must be an array.");
+        return value.map((id, index) =>
+          positiveInteger(id, `Property ID at position ${index + 1}`, Number.MAX_SAFE_INTEGER)
+        );
       }
       const staff = setStaffActive(
         database,

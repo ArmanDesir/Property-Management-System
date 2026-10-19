@@ -11,6 +11,7 @@ type StaffDraft = {
   username: string;
   role: Role;
   password: string;
+  propertyIds: number[];
 };
 
 const emptyDraft: StaffDraft = {
@@ -18,10 +19,12 @@ const emptyDraft: StaffDraft = {
   username: "",
   role: "front_desk",
   password: "",
+  propertyIds: [],
 };
 
 const roleLabels: Record<Role, string> = {
   administrator: "Administrator",
+  property_manager: "Property Manager",
   front_desk: "Front Desk",
   housekeeping: "Housekeeping",
   accounting: "Accounting",
@@ -37,6 +40,7 @@ export function StaffPage({
   flash: (message: string) => void;
 }) {
   const [staff, setStaff] = useState<StaffUser[]>([]);
+  const [properties, setProperties] = useState<Array<{ id: number; name: string }>>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [draft, setDraft] = useState<StaffDraft | null>(null);
@@ -48,8 +52,12 @@ export function StaffPage({
     setLoading(true);
     setError("");
     try {
-      const result = await apiRequest<{ staff: StaffUser[] }>("/staff");
+      const [result, propertyResult] = await Promise.all([
+        apiRequest<{ staff: StaffUser[] }>("/staff"),
+        apiRequest<{ properties: Array<{ id: number; name: string }> }>("/properties"),
+      ]);
       setStaff(result.staff);
+      setProperties(propertyResult.properties);
     } catch (reason) {
       setError(errorMessage(reason));
     } finally {
@@ -69,6 +77,7 @@ export function StaffPage({
         username: user.username,
         role: user.role,
         password: "",
+        propertyIds: user.propertyIds ?? [],
       }
       : { ...emptyDraft });
   };
@@ -83,6 +92,7 @@ export function StaffPage({
         displayName: draft.displayName,
         username: draft.username,
         role: draft.role,
+        propertyIds: draft.role === "property_manager" ? draft.propertyIds : [],
         ...(draft.password ? { password: draft.password } : {}),
       };
       await apiRequest(
@@ -174,13 +184,39 @@ export function StaffPage({
               <span className="field-label">Role</span>
               <select
                 value={draft.role}
-                onChange={(event) => setDraft({ ...draft, role: event.target.value as Role })}
+                onChange={(event) => setDraft({
+                  ...draft,
+                  role: event.target.value as Role,
+                  propertyIds: event.target.value === "property_manager" ? draft.propertyIds : [],
+                })}
               >
                 {Object.entries(roleLabels).map(([value, label]) => (
                   <option key={value} value={value}>{label}</option>
                 ))}
               </select>
             </label>
+            {draft.role === "property_manager" && (
+              <fieldset className="form-field staff-property-assignments">
+                <legend className="field-label">Assigned properties</legend>
+                {properties.length === 0
+                  ? <span className="field-hint">Create an active property before assigning a manager.</span>
+                  : properties.map((property) => (
+                    <label className="staff-property-option" key={property.id}>
+                      <input
+                        type="checkbox"
+                        checked={draft.propertyIds.includes(property.id)}
+                        onChange={(event) => setDraft({
+                          ...draft,
+                          propertyIds: event.target.checked
+                            ? [...draft.propertyIds, property.id]
+                            : draft.propertyIds.filter((id) => id !== property.id),
+                        })}
+                      />
+                      <span>{property.name}</span>
+                    </label>
+                  ))}
+              </fieldset>
+            )}
             <label className="form-field">
               <span className="field-label">
                 {editingId === null ? "Temporary password" : "New password (optional)"}

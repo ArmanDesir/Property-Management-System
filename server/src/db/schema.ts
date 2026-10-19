@@ -364,6 +364,32 @@ export const staffAccounts = sqliteTable(
   ],
 );
 
+export const staffRoleExtensions = sqliteTable(
+  "staff_role_extensions",
+  {
+    staffId: integer("staff_id").primaryKey()
+      .references(() => staffAccounts.id, { onDelete: "cascade" }),
+    role: text("role", { enum: ["property_manager"] }).notNull(),
+  },
+  (table) => [
+    check("staff_role_extensions_role_check", sql`${table.role} = 'property_manager'`),
+  ],
+);
+
+export const propertyManagerProperties = sqliteTable(
+  "property_manager_properties",
+  {
+    staffId: integer("staff_id").notNull()
+      .references(() => staffAccounts.id, { onDelete: "cascade" }),
+    propertyId: integer("property_id").notNull()
+      .references(() => properties.id, { onDelete: "cascade" }),
+  },
+  (table) => [
+    uniqueIndex("property_manager_properties_unique").on(table.staffId, table.propertyId),
+    index("property_manager_properties_property").on(table.propertyId, table.staffId),
+  ],
+);
+
 export const authSessions = sqliteTable(
   "auth_sessions",
   {
@@ -472,5 +498,62 @@ export const maintenanceHistory = sqliteTable(
       sql`${table.toStatus} IN ('open', 'in_progress', 'awaiting_parts', 'completed', 'cancelled')`,
     ),
     index("maintenance_history_request_time").on(table.requestId, table.changedAt, table.id),
+  ],
+);
+
+export const teamTasks = sqliteTable(
+  "team_tasks",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    propertyId: integer("property_id").notNull()
+      .references(() => properties.id, { onDelete: "restrict" }),
+    unitId: integer("unit_id").references(() => units.id, { onDelete: "restrict" }),
+    reservationId: integer("reservation_id").references(() => reservations.id, { onDelete: "restrict" }),
+    title: text("title").notNull(),
+    description: text("description").notNull(),
+    department: text("department", {
+      enum: ["front_desk", "housekeeping", "accounting"],
+    }).notNull(),
+    assignedStaffId: integer("assigned_staff_id").notNull()
+      .references(() => staffAccounts.id, { onDelete: "restrict" }),
+    createdByStaffId: integer("created_by_staff_id").notNull()
+      .references(() => staffAccounts.id, { onDelete: "restrict" }),
+    priority: text("priority", { enum: ["low", "normal", "high", "urgent"] })
+      .notNull().default("normal"),
+    status: text("status", {
+      enum: ["pending", "in_progress", "submitted", "completed", "rejected", "cancelled"],
+    }).notNull().default("pending"),
+    dueDate: text("due_date"),
+    dueTime: text("due_time"),
+    completionNote: text("completion_note"),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    check("team_tasks_title_nonempty", sql`length(trim(${table.title})) > 0`),
+    check("team_tasks_description_nonempty", sql`length(trim(${table.description})) > 0`),
+    check("team_tasks_department_check", sql`${table.department} IN ('front_desk', 'housekeeping', 'accounting')`),
+    check("team_tasks_priority_check", sql`${table.priority} IN ('low', 'normal', 'high', 'urgent')`),
+    check("team_tasks_status_check", sql`${table.status} IN ('pending', 'in_progress', 'submitted', 'completed', 'rejected', 'cancelled')`),
+    index("team_tasks_property_status_due").on(table.propertyId, table.status, table.dueDate),
+    index("team_tasks_assignee_status_due").on(table.assignedStaffId, table.status, table.dueDate),
+  ],
+);
+
+export const teamTaskActivity = sqliteTable(
+  "team_task_activity",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    taskId: integer("task_id").notNull()
+      .references(() => teamTasks.id, { onDelete: "cascade" }),
+    actorStaffId: integer("actor_staff_id").references(() => staffAccounts.id, { onDelete: "set null" }),
+    eventType: text("event_type", {
+      enum: ["created", "status_changed", "submitted", "approved", "returned", "cancelled", "details_changed"],
+    }).notNull(),
+    description: text("description").notNull(),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    index("team_task_activity_task_time").on(table.taskId, table.createdAt, table.id),
   ],
 );

@@ -64,6 +64,13 @@
       "when": 1792390397965,
       "tag": "0008_magical_lady_mastermind",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1792455000000,
+      "tag": "0009_team_tasks_room_availability",
+      "breakpoints": true
     }
   ]
 }

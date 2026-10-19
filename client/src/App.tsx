@@ -28,6 +28,8 @@ import { ReportsPage } from "./features/reports/ReportsPage";
 import { AuthPage, type StaffUser } from "./features/auth/AuthPage";
 import { StaffPage } from "./features/staff/StaffPage";
 import { MaintenancePage } from "./features/maintenance/MaintenancePage";
+import { TeamTasksPage, PropertyManagerDashboard } from "./features/tasks/TeamTasksPage";
+import { RoomAvailabilityPage } from "./features/room-availability/RoomAvailabilityPage";
 import { ApiRequestError, apiRequest } from "./lib/api";
 import "./App.css";
 
@@ -56,6 +58,8 @@ type Route =
   | { name: "reports" }
   | { name: "staff" }
   | { name: "maintenance" }
+  | { name: "tasks" }
+  | { name: "room-availability" }
   | { name: "new-reservation" }
   | { name: "reservation-details"; reservationId: number }
   | { name: "edit-reservation"; reservationId: number }
@@ -199,6 +203,8 @@ function App() {
     route.name.includes("reservation") || route.name === "reservations";
   const isBillingRoute = route.name === "billing" || route.name.includes("invoice");
   const isReportsRoute = route.name === "reports";
+  const canUseRoomCalendar =
+    role === "administrator" || role === "property_manager" || role === "front_desk";
 
   return (
     <main className="shell">
@@ -237,6 +243,15 @@ function App() {
           )}
           {role === "administrator" && (
             <NavLink path="/staff" label="Staff" active={route.name === "staff"} navigate={navigate} />
+          )}
+          <NavLink
+            path="/tasks"
+            label={role === "administrator" || role === "property_manager" ? "Team Tasks" : "My Tasks"}
+            active={route.name === "tasks"}
+            navigate={navigate}
+          />
+          {canUseRoomCalendar && (
+            <NavLink path="/room-availability" label="Room Availability" active={route.name === "room-availability"} navigate={navigate} />
           )}
           {role !== "accounting" && (
             <NavLink path="/maintenance" label="Maintenance" active={route.name === "maintenance"} navigate={navigate} />
@@ -282,7 +297,11 @@ function App() {
 
       {hasRouteAccess ? (
       <>
-      {route.name === "dashboard" && <Dashboard navigate={navigate} role={role} />}
+      {route.name === "dashboard" && (
+        role === "property_manager"
+          ? <PropertyManagerDashboard navigate={navigate} />
+          : <Dashboard navigate={navigate} role={role} />
+      )}
       {route.name === "properties" && <PropertiesPage {...pageProps} />}
       {route.name === "new-property" && <PropertyFormPage {...pageProps} />}
       {route.name === "property-details" && (
@@ -349,6 +368,12 @@ function App() {
       )}
       {route.name === "maintenance" && (
         <MaintenancePage role={role} {...pageProps} />
+      )}
+      {route.name === "tasks" && (
+        <TeamTasksPage currentUser={staffUser} {...pageProps} />
+      )}
+      {route.name === "room-availability" && (
+        <RoomAvailabilityPage {...pageProps} />
       )}
       {route.name === "edit-invoice" && (
         <InvoiceFormPage {...pageProps} invoiceId={route.invoiceId} />
@@ -503,8 +528,10 @@ function Dashboard({
               "Track property repairs, priorities, assignments, and progress.",
               "⚒",
             ],
+            ["09", "Team Tasks", "Assign and review staff work.", "✓"],
+            ["10", "Room Availability", "Review hotel room availability by date.", "▦"],
           ].filter(([, title]) => canAccessDashboardTile(role, title)).map(([number, title, description, icon]) =>
-            title === "Guests" || title === "Reservations" || title === "Front Desk" || title === "Housekeeping" || title === "Billing" || title === "Reports" || title === "Maintenance" ? (
+            title === "Guests" || title === "Reservations" || title === "Front Desk" || title === "Housekeeping" || title === "Billing" || title === "Reports" || title === "Maintenance" || title === "Team Tasks" || title === "Room Availability" ? (
               <button
                 className="area-card area-card-button"
                 key={title}
@@ -521,7 +548,11 @@ function Dashboard({
                             ? "/billing"
                             : title === "Reports"
                               ? "/reports"
-                              : "/maintenance",
+                              : title === "Maintenance"
+                                ? "/maintenance"
+                                : title === "Team Tasks"
+                                  ? "/tasks"
+                                  : "/room-availability",
                 )}
               >
                 <span className="card-top">
@@ -569,6 +600,8 @@ function resolveRoute(path: string): Route {
   if (path === "/reports") return { name: "reports" };
   if (path === "/staff") return { name: "staff" };
   if (path === "/maintenance") return { name: "maintenance" };
+  if (path === "/tasks") return { name: "tasks" };
+  if (path === "/room-availability") return { name: "room-availability" };
   if (path === "/billing/new") return { name: "new-invoice" };
   if (path === "/reservations/new") return { name: "new-reservation" };
 
@@ -623,6 +656,8 @@ function resolveRoute(path: string): Route {
 function canAccessRoute(route: Route, role: StaffUser["role"]): boolean {
   if (route.name === "dashboard" || route.name === "not-found") return true;
   if (role === "administrator") return true;
+  if (route.name === "tasks") return true;
+  if (role === "property_manager") return route.name === "room-availability";
   if (role === "front_desk") {
     return [
       "front-desk",
@@ -637,6 +672,7 @@ function canAccessRoute(route: Route, role: StaffUser["role"]): boolean {
       "billing",
       "invoice-details",
       "maintenance",
+      "room-availability",
     ].includes(route.name);
   }
   if (role === "housekeeping") return route.name === "housekeeping" || route.name === "maintenance";
@@ -654,11 +690,12 @@ function canAccessDashboardTile(
   title: string,
 ): boolean {
   if (role === "administrator") return true;
+  if (role === "property_manager") return title === "Team Tasks" || title === "Room Availability";
   if (role === "front_desk") {
-    return ["Front Desk", "Reservations", "Guests", "Billing", "Maintenance"].includes(title);
+    return ["Front Desk", "Reservations", "Guests", "Billing", "Maintenance", "Team Tasks", "Room Availability"].includes(title);
   }
-  if (role === "housekeeping") return title === "Housekeeping" || title === "Maintenance";
-  return title === "Billing" || title === "Reports";
+  if (role === "housekeeping") return title === "Housekeeping" || title === "Maintenance" || title === "Team Tasks";
+  return title === "Billing" || title === "Reports" || title === "Team Tasks";
 }
 
 function NavLink({
