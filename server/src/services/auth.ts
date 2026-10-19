@@ -312,6 +312,7 @@ export async function updateStaff(
       new Date().toISOString(),
       id,
     );
+    savePropertyManagerAssignments(client, id, nextRole, input.propertyIds);
     client.prepare("DELETE FROM auth_sessions WHERE staff_id = ?").run(id);
     client.exec("COMMIT");
   } catch (error) {
@@ -336,7 +337,6 @@ export function setStaffActive(
       id,
       isActive && existing.role === "administrator",
     );
-    savePropertyManagerAssignments(client, id, nextRole, input.propertyIds);
     client.prepare("UPDATE staff_accounts SET is_active = ?, updated_at = ? WHERE id = ?")
       .run(isActive ? 1 : 0, new Date().toISOString(), id);
     if (!isActive) client.prepare("DELETE FROM auth_sessions WHERE staff_id = ?").run(id);

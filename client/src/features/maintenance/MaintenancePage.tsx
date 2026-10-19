@@ -3,7 +3,7 @@ import { apiRequest } from "../../lib/api";
 import { ErrorState, LoadingState } from "../properties/PropertiesPages";
 import "./Maintenance.css";
 
-type Role = "administrator" | "front_desk" | "housekeeping" | "accounting";
+type Role = "administrator" | "property_manager" | "front_desk" | "housekeeping" | "accounting";
 type Status = "open" | "in_progress" | "awaiting_parts" | "completed" | "cancelled";
 type Priority = "low" | "normal" | "high" | "urgent";
 type Category =

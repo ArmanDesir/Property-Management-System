@@ -1,6 +1,7 @@
 import type { PmsDatabase } from "../db/connection.js";
+import type { DatabaseSync } from "node:sqlite";
 import { HttpError } from "../middleware/http-errors.js";
-import type { AuthenticatedStaff, StaffRole } from "./auth.js";
+import type { AuthenticatedStaff } from "./auth.js";
 import { withImmediateTransaction } from "./reservations.js";
 
 export const taskStatuses = [
@@ -268,7 +269,7 @@ export function transitionTeamTask(
     const current = textValue(task.status) as TeamTaskStatus;
     const assignee = numberValue(task.assigned_staff_id);
     const isManager = actor.role === "administrator" ||
-      (actor.role === "property_manager" && isManagerProperty(database, actor.id, numberValue(task.property_id)));
+      (actor.role === "property_manager" && isManagerProperty(database.$client, actor.id, numberValue(task.property_id)));
     let eventType: string;
     let description: string;
     if (nextStatus === "cancelled") {
@@ -422,7 +423,7 @@ function validateTaskReferences(
 }
 
 function assertManagerProperty(
-  client: PmsDatabase["$client"],
+  client: DatabaseSync,
   actor: AuthenticatedStaff,
   propertyId: number,
 ): void {

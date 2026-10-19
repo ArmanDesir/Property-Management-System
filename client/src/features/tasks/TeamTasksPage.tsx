@@ -451,7 +451,7 @@ export function PropertyManagerDashboard({ navigate }: { navigate: (path: string
   const [dashboard, setDashboard] = useState<{
     properties: Array<{ id: number; name: string }>;
     operations: Record<string, number>;
-    billing: Array<{ currency: string; issuedTodayCents: number; outstandingCents: number }>;
+    billing: Array<{ currency: string; issuedTodayCents: string; outstandingCents: string }>;
     tasks: { totals: { overdue: number; awaitingReview: number }; byStatus: Record<string, number>; byPriority: Record<string, number> };
   } | null>(null);
   const [error, setError] = useState("");
@@ -483,7 +483,7 @@ export function PropertyManagerDashboard({ navigate }: { navigate: (path: string
         "Overdue tasks": dashboard.tasks.totals.overdue,
       }).map(([name, value]) => <article className="manager-metric" key={name}><span>{name}</span><strong>{value}</strong></article>)}</div>
       <section className="task-create-panel"><h2>Assigned properties</h2><div className="manager-property-list">{dashboard.properties.map((property) => <span key={property.id}>{property.name}</span>)}</div>
-        <h3>Invoices issued today / outstanding</h3>{dashboard.billing.length === 0 ? <p>No invoice totals for this view.</p> : dashboard.billing.map((item) => <p key={item.currency}>{item.currency}: {(item.issuedTodayCents / 100).toFixed(2)} issued today · {(item.outstandingCents / 100).toFixed(2)} outstanding</p>)}
+        <h3>Invoices issued today / outstanding</h3>        {dashboard.billing.length === 0 ? <p>No invoice totals for this view.</p> : dashboard.billing.map((item) => <p key={item.currency}>{item.currency}: {(Number(item.issuedTodayCents) / 100).toFixed(2)} issued today · {(Number(item.outstandingCents) / 100).toFixed(2)} outstanding</p>)}
         <div className="manager-actions"><button className="button button-primary" onClick={() => navigate("/tasks")}>Manage team tasks</button><button className="button button-secondary" onClick={() => navigate("/room-availability")}>Room availability</button></div>
       </section>
     </>}

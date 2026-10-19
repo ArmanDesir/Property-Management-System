@@ -1,8 +1,8 @@
 import { Router } from "express";
-import type { Request } from "express";
 import type { PmsDatabase } from "../db/connection.js";
 import { HttpError } from "../middleware/http-errors.js";
-import { getPropertyManagerDashboard, validateCalendarDate } from "../services/room-availability.js";
+import { getPropertyManagerDashboard } from "../services/manager-dashboard.js";
+import { validateCalendarDate } from "../services/room-availability.js";
 
 export function createManagerRouter(database: PmsDatabase): Router {
   const router = Router();

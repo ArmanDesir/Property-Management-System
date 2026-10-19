@@ -75,13 +75,6 @@ export function createStaffRouter(database: PmsDatabase): Router {
         throw new HttpError(400, "Active status must be a boolean.");
       }
 
-      function propertyIdsValue(value: unknown): number[] {
-        if (value === undefined) return [];
-        if (!Array.isArray(value)) throw new HttpError(400, "Property IDs must be an array.");
-        return value.map((id, index) =>
-          positiveInteger(id, `Property ID at position ${index + 1}`, Number.MAX_SAFE_INTEGER)
-        );
-      }
       const staff = setStaffActive(
         database,
         parseRecordId(request.params.staffId),
@@ -92,4 +85,12 @@ export function createStaffRouter(database: PmsDatabase): Router {
   );
 
   return router;
+}
+
+function propertyIdsValue(value: unknown): number[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) throw new HttpError(400, "Property IDs must be an array.");
+  return value.map((id, index) =>
+    positiveInteger(id, `Property ID at position ${index + 1}`, Number.MAX_SAFE_INTEGER)
+  );
 }
