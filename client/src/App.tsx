@@ -253,7 +253,8 @@ function App() {
           {canUseRoomCalendar && (
             <NavLink path="/room-availability" label="Room Availability" active={route.name === "room-availability"} navigate={navigate} />
           )}
-          {role !== "accounting" && (
+          {(role === "administrator" || role === "property_manager" ||
+            role === "front_desk" || role === "housekeeping") && (
             <NavLink path="/maintenance" label="Maintenance" active={route.name === "maintenance"} navigate={navigate} />
           )}
         </nav>

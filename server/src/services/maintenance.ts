@@ -43,6 +43,7 @@ export interface MaintenanceDraft {
 export interface MaintenanceFilters {
   search: string;
   propertyId: number | null;
+  allowedPropertyIds?: number[];
   unitId: number | null;
   assignedStaffId: number | null;
   status: MaintenanceStatus | "all";
@@ -67,9 +68,11 @@ export function createMaintenanceRequest(
   database: PmsDatabase,
   draft: MaintenanceDraft,
   staffId: number,
+  allowedPropertyIds?: number[],
   now = new Date(),
 ) {
   return withImmediateTransaction(database, (client) => {
+    assertAllowedProperty(draft.propertyId, allowedPropertyIds);
     validateReferences(client, draft);
     const reportedAt = draft.reportedAt ?? now.toISOString();
     const requestCode = `MNT-${now.toISOString().slice(0, 10).replaceAll("-", "")}-${randomUUID().slice(0, 8).toUpperCase()}`;
@@ -107,13 +110,16 @@ export function updateMaintenanceRequest(
   database: PmsDatabase,
   id: number,
   draft: Omit<MaintenanceDraft, "reportedAt">,
+  allowedPropertyIds?: number[],
   now = new Date(),
 ) {
   return withImmediateTransaction(database, (client) => {
     const existing = client.prepare(`
-      SELECT id, status FROM maintenance_requests WHERE id = ?
+      SELECT id, status, property_id FROM maintenance_requests WHERE id = ?
     `).get(id);
     if (!existing) throw new HttpError(404, "Maintenance request not found.");
+    assertAllowedProperty(numberValue(existing.property_id), allowedPropertyIds);
+    assertAllowedProperty(draft.propertyId, allowedPropertyIds);
     const status = statusValue(existing.status);
     if (status === "completed" || status === "cancelled") {
       throw new HttpError(409, "Completed or cancelled maintenance requests cannot be edited.");
@@ -146,13 +152,15 @@ export function transitionMaintenanceRequest(
   nextStatus: MaintenanceStatus,
   staffId: number,
   note: string | null,
+  allowedPropertyIds?: number[],
   now = new Date(),
 ) {
   return withImmediateTransaction(database, (client) => {
     const existing = client.prepare(`
-      SELECT id, status FROM maintenance_requests WHERE id = ?
+      SELECT id, status, property_id FROM maintenance_requests WHERE id = ?
     `).get(id);
     if (!existing) throw new HttpError(404, "Maintenance request not found.");
+    assertAllowedProperty(numberValue(existing.property_id), allowedPropertyIds);
     const currentStatus = statusValue(existing.status);
     if (!statusTransitions[currentStatus].includes(nextStatus)) {
       throw new HttpError(
@@ -194,6 +202,16 @@ export function listMaintenanceRequests(
   if (filters.propertyId !== null) {
     conditions.push("r.property_id = ?");
     params.push(filters.propertyId);
+  }
+  if (filters.allowedPropertyIds !== undefined) {
+    if (filters.allowedPropertyIds.length === 0) {
+      conditions.push("0 = 1");
+    } else {
+      conditions.push(
+        `r.property_id IN (${filters.allowedPropertyIds.map(() => "?").join(", ")})`,
+      );
+      params.push(...filters.allowedPropertyIds);
+    }
   }
   if (filters.unitId !== null) {
     conditions.push("r.unit_id = ?");
@@ -245,8 +263,18 @@ export function listMaintenanceRequests(
   };
 }
 
-export function getMaintenanceRequest(database: PmsDatabase, id: number) {
-  const row = database.$client.prepare(`${requestSelect} WHERE r.id = ?`).get(id);
+export function getMaintenanceRequest(
+  database: PmsDatabase,
+  id: number,
+  allowedPropertyIds?: number[],
+) {
+  const scope = allowedPropertyIds === undefined
+    ? ""
+    : allowedPropertyIds.length
+      ? ` AND r.property_id IN (${allowedPropertyIds.map(() => "?").join(", ")})`
+      : " AND 0 = 1";
+  const row = database.$client.prepare(`${requestSelect} WHERE r.id = ?${scope}`)
+    .get(id, ...(allowedPropertyIds ?? []));
   if (!row) throw new HttpError(404, "Maintenance request not found.");
   const history = database.$client.prepare(`
     SELECT h.id, h.from_status, h.to_status, h.note, h.changed_at,
@@ -271,7 +299,16 @@ export function getMaintenanceRequest(database: PmsDatabase, id: number) {
 export function getMaintenanceDashboard(
   database: PmsDatabase,
   today = new Date().toISOString().slice(0, 10),
+  allowedPropertyIds?: number[],
 ) {
+  const scope = allowedPropertyIds === undefined
+    ? { where: "", params: [] as number[] }
+    : allowedPropertyIds.length
+      ? {
+        where: ` WHERE property_id IN (${allowedPropertyIds.map(() => "?").join(", ")})`,
+        params: allowedPropertyIds,
+      }
+      : { where: " WHERE 0 = 1", params: [] as number[] };
   const totals = database.$client.prepare(`
     SELECT
       COALESCE(SUM(CASE WHEN status IN ('open', 'in_progress', 'awaiting_parts') THEN 1 ELSE 0 END), 0) AS open_count,
@@ -279,15 +316,18 @@ export function getMaintenanceDashboard(
       COALESCE(SUM(CASE WHEN status = 'in_progress' THEN 1 ELSE 0 END), 0) AS in_progress_count,
       COALESCE(SUM(CASE WHEN status = 'awaiting_parts' THEN 1 ELSE 0 END), 0) AS awaiting_parts_count,
       COALESCE(SUM(CASE WHEN status IN ('open', 'in_progress', 'awaiting_parts') AND target_completion_date < ? THEN 1 ELSE 0 END), 0) AS overdue_count
-    FROM maintenance_requests
-  `).get(today);
-  const byStatus = groupCounts(database, "status");
-  const byPriority = groupCounts(database, "priority");
+    FROM maintenance_requests${scope.where}
+  `).get(today, ...scope.params);
+  const byStatus = groupCounts(database, "status", allowedPropertyIds);
+  const byPriority = groupCounts(database, "priority", allowedPropertyIds);
   const byProperty = database.$client.prepare(`
     SELECT p.id AS property_id, p.name AS property_name, r.status, COUNT(*) AS count
     FROM maintenance_requests r JOIN properties p ON p.id = r.property_id
+    ${allowedPropertyIds === undefined ? "" : allowedPropertyIds.length
+      ? `WHERE r.property_id IN (${allowedPropertyIds.map(() => "?").join(", ")})`
+      : "WHERE 0 = 1"}
     GROUP BY p.id, p.name, r.status ORDER BY p.name COLLATE NOCASE, r.status
-  `).all().map((row) => ({
+  `).all(...(allowedPropertyIds ?? [])).map((row) => ({
     propertyId: numberValue(row.property_id),
     propertyName: stringValue(row.property_name),
     status: statusValue(row.status),
@@ -295,9 +335,11 @@ export function getMaintenanceDashboard(
   }));
   const recentlyCompleted = database.$client.prepare(`
     ${requestSelect}
-    WHERE r.status = 'completed'
+    WHERE r.status = 'completed'${allowedPropertyIds === undefined ? "" : allowedPropertyIds.length
+      ? ` AND r.property_id IN (${allowedPropertyIds.map(() => "?").join(", ")})`
+      : " AND 0 = 1"}
     ORDER BY r.completed_at DESC, r.id DESC LIMIT 10
-  `).all().map(toRequest);
+  `).all(...(allowedPropertyIds ?? [])).map(toRequest);
   return {
     asOfDate: today,
     current: {
@@ -325,11 +367,29 @@ const requestSelect = `
   LEFT JOIN units u ON u.id = r.unit_id
   LEFT JOIN staff_accounts s ON s.id = r.assigned_staff_id`;
 
-function groupCounts(database: PmsDatabase, field: "status" | "priority") {
+function groupCounts(
+  database: PmsDatabase,
+  field: "status" | "priority",
+  allowedPropertyIds?: number[],
+) {
+  const scope = allowedPropertyIds === undefined
+    ? { where: "", params: [] as number[] }
+    : allowedPropertyIds.length
+      ? {
+        where: ` WHERE property_id IN (${allowedPropertyIds.map(() => "?").join(", ")})`,
+        params: allowedPropertyIds,
+      }
+      : { where: " WHERE 0 = 1", params: [] as number[] };
   return database.$client.prepare(`
     SELECT ${field} AS value, COUNT(*) AS count
-    FROM maintenance_requests GROUP BY ${field} ORDER BY ${field}
-  `).all().map((row) => ({ value: stringValue(row.value), count: numberValue(row.count) }));
+    FROM maintenance_requests${scope.where} GROUP BY ${field} ORDER BY ${field}
+  `).all(...scope.params).map((row) => ({ value: stringValue(row.value), count: numberValue(row.count) }));
+}
+
+function assertAllowedProperty(propertyId: number, allowedPropertyIds?: number[]): void {
+  if (allowedPropertyIds !== undefined && !allowedPropertyIds.includes(propertyId)) {
+    throw new HttpError(404, "Maintenance request not found.");
+  }
 }
 
 function validateReferences(client: DatabaseSync, draft: MaintenanceDraft): void {

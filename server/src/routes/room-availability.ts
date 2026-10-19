@@ -19,8 +19,8 @@ export function createRoomAvailabilityRouter(database: PmsDatabase): Router {
     if (!request.auth) throw new HttpError(401, "Sign in to access this resource.");
     const from = queryValue(request, "from");
     const to = queryValue(request, "to");
-    const checkIn = queryValue(request, "checkIn");
-    const checkOut = queryValue(request, "checkOut");
+    const checkIn = optionalQueryValue(request, "checkIn");
+    const checkOut = optionalQueryValue(request, "checkOut");
     if ((checkIn === undefined) !== (checkOut === undefined)) {
       throw new HttpError(400, "Both requested stay dates must be provided.");
     }
@@ -47,5 +47,12 @@ export function createRoomAvailabilityRouter(database: PmsDatabase): Router {
 function queryValue(request: Request, name: string): string {
   const value = request.query[name];
   if (typeof value !== "string") throw new HttpError(400, `${name} is required.`);
+  return value;
+}
+
+function optionalQueryValue(request: Request, name: string): string | undefined {
+  const value = request.query[name];
+  if (value === undefined) return undefined;
+  if (typeof value !== "string") throw new HttpError(400, `${name} must be supplied once.`);
   return value;
 }

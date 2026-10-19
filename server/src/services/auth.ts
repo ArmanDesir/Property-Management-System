@@ -445,7 +445,8 @@ export function hasPermission(role: StaffRole, method: string, path: string): bo
       return true;
     case "property_manager":
       return isTaskRead || isTaskCreate || isTaskEdit || isTaskStatus ||
-        isRoomCalendar || isManagerDashboard;
+        isRoomCalendar || isManagerDashboard || isMaintenanceRead ||
+        isMaintenanceCreate || isMaintenanceAdminWrite;
     case "front_desk":
       return isPropertiesRead || isGuest || isReservation || isFrontDesk ||
         isInvoiceRead || isMaintenanceRead || isMaintenanceCreate ||

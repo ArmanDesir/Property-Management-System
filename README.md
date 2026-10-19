@@ -19,6 +19,8 @@ npm run dev
 
 The client runs at <http://127.0.0.1:5173> and the API at <http://127.0.0.1:3000>. Both servers bind only to `127.0.0.1`; the Vite server proxies `/api` to the local API. The app does not call cloud services or external APIs. Loopback binding limits network exposure but is not complete security; continue protecting access to the laptop and its user account.
 
+The backend applies any pending migrations when it starts, including when launched by `npm run dev`. Back up and verify retained local data before starting after an upgrade. To start each development server separately, use `npm run dev:server` and `npm run dev:client` in separate terminals; the backend still applies pending migrations. `npm run dev` starts both together and stops the other process if either one exits.
+
 The SQLite database is stored at `data/pms.db`, outside the frontend's public directory. Set `PMS_DATABASE_PATH` to use another local file path (relative paths are resolved from the project root); paths inside `client/public` are rejected. The database and backup files are ignored by Git. Phase 2 through Phase 7 use additive migrations. Phase 4 extends the existing reservations table in place: legacy reservation IDs, dependent foreign keys, and history are preserved. Legacy reservations retain a null unit assignment because the previous schema did not track units; their reference and lifecycle state are backfilled. Phase 5 adds separate stay status and actual check-in/check-out timestamps to the existing reservations; existing rows start as not checked in, with actual timestamps left null. Phase 6 adds housekeeping status and last-cleaned timestamp columns to units; existing units start as needing cleaning, while their operational and reservation statuses remain unchanged. Phase 7 adds separate invoice, invoice-line-item, and payment tables; it does not alter or seed existing reservations, guests, or the legacy `billing_entries` table.
 
 ## Available commands
@@ -26,6 +28,8 @@ The SQLite database is stored at `data/pms.db`, outside the frontend's public di
 | Command | Description |
 | --- | --- |
 | `npm run dev` | Run the API and client in development mode |
+| `npm run dev:server` | Run only the API workspace (startup applies pending migrations) |
+| `npm run dev:client` | Run only the Vite client |
 | `npm run build` | Build both workspaces |
 | `npm run typecheck` | Type-check both workspaces |
 | `npm run db:generate` | Generate a migration from the Drizzle schema |
@@ -36,6 +40,7 @@ The SQLite database is stored at `data/pms.db`, outside the frontend's public di
 | `npm run test:reports` | Exercise read-only reports against a temporary database with synthetic data |
 | `npm run test:auth` | Exercise authentication, staff, and authorization against an isolated database |
 | `npm run test:maintenance` | Exercise maintenance workflows and role controls against an isolated database |
+| `npm run test:phase11` | Exercise property-manager scope, team-task workflow, room availability, and authorization against an isolated database |
 | `npm test` | Run migration, API regression, billing, reports, access-control, and maintenance integration tests |
 
 ## Project layout
@@ -53,11 +58,14 @@ The Drizzle schema is in `server/src/db/schema.ts`; generated migrations and jou
 
 Phase 9 requires a local staff account to access PMS operations. On the first launch after migration, create the initial administrator in the setup screen; no default or demo account is created. Passwords must be at least 12 characters and are stored as bcrypt hashes. Sessions use random opaque tokens with an eight-hour lifetime, an HttpOnly session cookie, a readable SameSite CSRF cookie, and exact local Origin checks. The CSRF cookie uses `/` so the frontend can read it on application routes; unsafe API requests still require the matching header and session-bound hash. The API accepts unsafe requests only from `http://127.0.0.1:5173` by default. For a different local UI port, set `PMS_FRONTEND_ORIGIN` to that exact `http://127.0.0.1:<port>` origin for the server. Do not allow other origins: cookies are shared across ports on the same host. Staff changes and deactivation invalidate existing sessions. There is no password recovery workflow; keep the laptop account and independent database backups secure.
 
+Property managers are assigned to specific active properties by an administrator. Their dashboard, maintenance tools, team tasks, and room calendar are limited to those assignments. Team tasks support manager assignment/editing, staff progress and submission, and manager approval or return for correction. Room availability is read-only and uses actual stay timestamps and half-open reservation nights; starting a reservation continues through the existing reservation workflow.
+
 The API applies default-deny backend authorization to all supported operations:
 
 | Role | Backend access |
 | --- | --- |
 | Administrator | All supported property, unit, guest, reservation, front desk, housekeeping, invoice, report, and staff operations |
+| Property Manager | Assigned-property dashboard, maintenance, team-task administration, and hotel room availability; no access to staff administration or guest/reservation/billing APIs |
 | Front Desk | Read properties/units for booking; guest and reservation operations, front-desk dashboard, read-only invoice views, and read-only maintenance views plus request creation; cannot edit, assign, or change maintenance status |
 | Housekeeping | Housekeeping overview and housekeeping status transitions; read maintenance information and create cleaning-related requests only; cannot edit, assign, or change maintenance status |
 | Accounting | Invoice and payment operations plus read-only reports; no maintenance access |

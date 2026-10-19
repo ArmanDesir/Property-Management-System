@@ -28,23 +28,37 @@ export function createMaintenanceRouter(database: PmsDatabase): Router {
 
   router.get(
     "/dashboard",
-    (_request, response) => {
-      response.json({ dashboard: getMaintenanceDashboard(database) });
+    (request, response) => {
+      response.json({
+        dashboard: getMaintenanceDashboard(database, undefined, managerPropertyIds(database, request)),
+      });
     },
   );
 
   router.get("/options", (request, response) => {
+    const propertyIds = managerPropertyIds(database, request);
+    const propertyScope = propertyIds === undefined
+      ? ""
+      : propertyIds.length
+        ? ` AND id IN (${propertyIds.map(() => "?").join(", ")})`
+        : " AND 0 = 1";
     const properties = database.$client.prepare(`
-      SELECT id, name FROM properties WHERE status = 'active'
+      SELECT id, name FROM properties WHERE status = 'active'${propertyScope}
       ORDER BY name COLLATE NOCASE, id
-    `).all();
+    `).all(...(propertyIds ?? []));
+    const unitScope = propertyIds === undefined
+      ? ""
+      : propertyIds.length
+        ? ` AND u.property_id IN (${propertyIds.map(() => "?").join(", ")})`
+        : " AND 0 = 1";
     const units = database.$client.prepare(`
       SELECT u.id, u.property_id, u.name, u.unit_type
       FROM units u JOIN properties p ON p.id = u.property_id
-      WHERE p.status = 'active' AND u.status = 'active' AND u.archived_at IS NULL
+      WHERE p.status = 'active' AND u.status = 'active' AND u.archived_at IS NULL${unitScope}
       ORDER BY p.name COLLATE NOCASE, u.name COLLATE NOCASE, u.id
-    `).all();
-    const staff = request.auth?.role === "administrator"
+    `).all(...(propertyIds ?? []));
+    const staff = request.auth?.role === "administrator" ||
+        request.auth?.role === "property_manager"
       ? database.$client.prepare(`
         SELECT id, display_name FROM staff_accounts
         WHERE is_active = 1 ORDER BY display_name COLLATE NOCASE, id
@@ -71,7 +85,12 @@ export function createMaintenanceRouter(database: PmsDatabase): Router {
   router.get(
     "/",
     (request, response) => {
-      response.json({ ...listMaintenanceRequests(database, parseFilters(request)) });
+      response.json({
+        ...listMaintenanceRequests(
+          database,
+          parseFilters(request, managerPropertyIds(database, request)),
+        ),
+      });
     },
   );
 
@@ -88,14 +107,16 @@ export function createMaintenanceRouter(database: PmsDatabase): Router {
       if (!request.auth) throw new HttpError(401, "Sign in to access this resource.");
       if (
         request.auth.role !== "administrator" &&
+        request.auth.role !== "property_manager" &&
         draft.assignedStaffId !== null
       ) {
-        throw new HttpError(403, "Only administrators may assign maintenance requests.");
+        throw new HttpError(403, "Only managers may assign maintenance requests.");
       }
       const maintenanceRequest = createMaintenanceRequest(
         database,
         draft,
         request.auth.id,
+        managerPropertyIds(database, request),
       );
       response.status(201).json({ request: maintenanceRequest });
     }),
@@ -105,7 +126,11 @@ export function createMaintenanceRouter(database: PmsDatabase): Router {
     "/:requestId",
     (request, response) => {
       response.json({
-        request: getMaintenanceRequest(database, parseRecordId(request.params.requestId)),
+        request: getMaintenanceRequest(
+          database,
+          parseRecordId(request.params.requestId),
+          managerPropertyIds(database, request),
+        ),
       });
     },
   );
@@ -118,6 +143,7 @@ export function createMaintenanceRouter(database: PmsDatabase): Router {
         database,
         parseRecordId(request.params.requestId),
         draft,
+        managerPropertyIds(database, request),
       );
       response.json({ request: maintenanceRequest });
     }),
@@ -137,6 +163,7 @@ export function createMaintenanceRouter(database: PmsDatabase): Router {
         status,
         request.auth.id,
         note,
+        managerPropertyIds(database, request),
       );
       response.json({ request: maintenanceRequest });
     },
@@ -186,7 +213,7 @@ function parseDraft(value: unknown, allowReportedAt: boolean): MaintenanceDraft 
   };
 }
 
-function parseFilters(request: Request): MaintenanceFilters {
+function parseFilters(request: Request, allowedPropertyIds?: number[]): MaintenanceFilters {
   const status = queryValue(request, "status");
   const priority = queryValue(request, "priority");
   const category = queryValue(request, "category");
@@ -199,6 +226,7 @@ function parseFilters(request: Request): MaintenanceFilters {
   return {
     search: (queryValue(request, "q") ?? "").trim().slice(0, 120),
     propertyId: optionalId(queryValue(request, "propertyId"), "Property ID"),
+    allowedPropertyIds,
     unitId: optionalId(queryValue(request, "unitId"), "Unit ID"),
     assignedStaffId: optionalId(queryValue(request, "assignedStaffId"), "Assigned staff ID"),
     status: status === undefined
@@ -216,6 +244,20 @@ function parseFilters(request: Request): MaintenanceFilters {
     limit: queryInteger(request, "limit", 50, 1, 100),
     offset: queryInteger(request, "offset", 0, 0, 1_000_000),
   };
+}
+
+function managerPropertyIds(
+  database: PmsDatabase,
+  request: Request,
+): number[] | undefined {
+  if (request.auth?.role !== "property_manager") return undefined;
+  return database.$client.prepare(`
+    SELECT a.property_id
+    FROM property_manager_properties a
+    JOIN properties p ON p.id = a.property_id
+    WHERE a.staff_id = ? AND p.status = 'active'
+    ORDER BY a.property_id
+  `).all(request.auth.id).map((row) => Number(row.property_id));
 }
 
 function queryValue(request: Request, name: string): string | undefined {

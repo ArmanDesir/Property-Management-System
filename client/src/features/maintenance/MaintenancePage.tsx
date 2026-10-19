@@ -149,8 +149,8 @@ export function MaintenancePage({
   navigate: (path: string) => void;
   flash: (message: string) => void;
 }) {
-  const isAdministrator = role === "administrator";
-  const canCreate = role === "administrator" || role === "front_desk" || role === "housekeeping";
+  const isManager = role === "administrator" || role === "property_manager";
+  const canCreate = isManager || role === "front_desk" || role === "housekeeping";
   const [options, setOptions] = useState<Options>({ properties: [], units: [], staff: [] });
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
   const [requests, setRequests] = useState<MaintenanceRequest[]>([]);
@@ -254,7 +254,7 @@ export function MaintenancePage({
         category: draft.category,
         priority: draft.priority,
         targetCompletionDate: draft.targetCompletionDate || null,
-        assignedStaffId: isAdministrator && draft.assignedStaffId
+        assignedStaffId: isManager && draft.assignedStaffId
           ? Number(draft.assignedStaffId)
           : null,
       };
@@ -490,7 +490,7 @@ export function MaintenancePage({
                 onChange={(event) => setDraft({ ...draft, targetCompletionDate: event.target.value })}
               />
             </label>
-            {isAdministrator && (
+            {isManager && (
               <label className="form-field">
                 <span className="field-label">Assign to (optional)</span>
                 <select
@@ -633,7 +633,7 @@ export function MaintenancePage({
                   <button className="button button-secondary" onClick={() => void toggleDetails(request.id)}>
                     {expandedId === request.id ? "Hide details" : "Details"}
                   </button>
-                  {isAdministrator && ["open", "in_progress", "awaiting_parts"].includes(request.status) && (
+                  {isManager && ["open", "in_progress", "awaiting_parts"].includes(request.status) && (
                     <>
                       {request.status === "open" && (
                         <button className="button button-secondary" disabled={busyId === request.id} onClick={() => void changeStatus(request, "in_progress")}>Start</button>
@@ -663,7 +663,7 @@ export function MaintenancePage({
                         {detail.completedAt && (
                           <p><strong>Completed:</strong> {formatDateTime(detail.completedAt)}</p>
                         )}
-                        {isAdministrator && ["open", "in_progress", "awaiting_parts"].includes(detail.status) && (
+                        {isManager && ["open", "in_progress", "awaiting_parts"].includes(detail.status) && (
                           <label className="form-field maintenance-resolution-note">
                             <span className="field-label">Resolution / status note (optional)</span>
                             <textarea rows={2} maxLength={4000} value={statusNote} onChange={(event) => setStatusNote(event.target.value)} />
