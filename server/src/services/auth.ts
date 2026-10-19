@@ -31,6 +31,7 @@ export interface AuthenticatedStaff extends StaffUser {
 const sessionDurationMs = 8 * 60 * 60 * 1000;
 const sessionCookieName = "pms_session";
 const csrfCookieName = "pms_csrf";
+const localFrontendOrigin = configuredLocalFrontendOrigin();
 const dummyPasswordHash = bcrypt.hash("constant timing-only value", 12);
 const failedLogins = new Map<string, { count: number; resetAt: number }>();
 
@@ -179,18 +180,7 @@ export function requireAuthenticatedAndAuthorized(): RequestHandler {
 
 export function assertLocalOrigin(request: Request): void {
   const origin = request.get("origin");
-  if (!origin) throw new HttpError(403, "Requests must originate from the local PMS interface.");
-  let parsed: URL;
-  try {
-    parsed = new URL(origin);
-  } catch {
-    throw new HttpError(403, "Request origin is invalid.");
-  }
-  if (
-    parsed.protocol !== "http:" ||
-    parsed.hostname !== "127.0.0.1" ||
-    parsed.origin !== origin
-  ) {
+  if (!origin || origin !== localFrontendOrigin) {
     throw new HttpError(403, "Requests must originate from the local PMS interface.");
   }
 }
@@ -316,7 +306,8 @@ export function setSessionCookies(
   const maxAgeSeconds = Math.max(0, Math.floor((Date.parse(session.expiresAt) - Date.now()) / 1000));
   response.setHeader("Set-Cookie", [
     `${sessionCookieName}=${session.token}; Path=/api; HttpOnly; SameSite=Strict; Max-Age=${maxAgeSeconds}`,
-    `${csrfCookieName}=${session.csrfToken}; Path=/api; SameSite=Strict; Max-Age=${maxAgeSeconds}`,
+    `${csrfCookieName}=; Path=/api; SameSite=Strict; Max-Age=0`,
+    `${csrfCookieName}=${session.csrfToken}; Path=/; SameSite=Strict; Max-Age=${maxAgeSeconds}`,
   ]);
 }
 
@@ -324,6 +315,7 @@ export function clearSessionCookies(response: Response): void {
   response.setHeader("Set-Cookie", [
     `${sessionCookieName}=; Path=/api; HttpOnly; SameSite=Strict; Max-Age=0`,
     `${csrfCookieName}=; Path=/api; SameSite=Strict; Max-Age=0`,
+    `${csrfCookieName}=; Path=/; SameSite=Strict; Max-Age=0`,
   ]);
 }
 
@@ -473,6 +465,24 @@ function constantTimeTokenMatch(left: string, right: string): boolean {
 
 function isSafeMethod(method: string): boolean {
   return method === "GET" || method === "HEAD" || method === "OPTIONS";
+}
+
+function configuredLocalFrontendOrigin(): string {
+  const value = process.env.PMS_FRONTEND_ORIGIN ?? "http://127.0.0.1:5173";
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new Error("PMS_FRONTEND_ORIGIN must be an exact http://127.0.0.1 origin.");
+  }
+  if (
+    parsed.protocol !== "http:" ||
+    parsed.hostname !== "127.0.0.1" ||
+    parsed.origin !== value
+  ) {
+    throw new Error("PMS_FRONTEND_ORIGIN must be an exact http://127.0.0.1 origin.");
+  }
+  return value;
 }
 
 function integerValue(value: unknown): number {

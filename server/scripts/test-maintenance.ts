@@ -194,6 +194,10 @@ try {
   assert.equal(categoryFiltered.data.total, 1);
   const overdueFiltered = await admin("/maintenance?overdue=true");
   assert.equal(overdueFiltered.data.total, 1);
+  const activeUrgentDashboard = await admin("/maintenance/dashboard");
+  assert.equal(activeUrgentDashboard.data.dashboard.current.open, 2);
+  assert.equal(activeUrgentDashboard.data.dashboard.current.highPriority, 1);
+  assert.equal(activeUrgentDashboard.data.dashboard.current.overdue, 1);
   const injectionSearch = await admin(
     "/maintenance?q=" + encodeURIComponent("' OR 1=1 --"),
   );

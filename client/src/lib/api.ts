@@ -27,10 +27,13 @@ export async function apiRequest<T>(
       method,
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
+      credentials: "same-origin",
     });
   } catch {
     throw new Error("Could not reach the local PMS API. Check that the server is running.");
   }
+
+  if (response.status === 204) return undefined as T;
 
   let data: unknown;
   try {

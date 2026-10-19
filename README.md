@@ -51,7 +51,7 @@ The Drizzle schema is in `server/src/db/schema.ts`; generated migrations and jou
 
 ## API
 
-Phase 9 requires a local staff account to access PMS operations. On the first launch after migration, create the initial administrator in the setup screen; no default or demo account is created. Passwords must be at least 12 characters and are stored as bcrypt hashes. Sessions use random opaque tokens with an eight-hour lifetime, HttpOnly/SameSite cookies, a CSRF token, and local Origin checks. Staff changes and deactivation invalidate existing sessions. There is no password recovery workflow; keep the laptop account and independent database backups secure.
+Phase 9 requires a local staff account to access PMS operations. On the first launch after migration, create the initial administrator in the setup screen; no default or demo account is created. Passwords must be at least 12 characters and are stored as bcrypt hashes. Sessions use random opaque tokens with an eight-hour lifetime, an HttpOnly session cookie, a readable SameSite CSRF cookie, and exact local Origin checks. The CSRF cookie uses `/` so the frontend can read it on application routes; unsafe API requests still require the matching header and session-bound hash. The API accepts unsafe requests only from `http://127.0.0.1:5173` by default. For a different local UI port, set `PMS_FRONTEND_ORIGIN` to that exact `http://127.0.0.1:<port>` origin for the server. Do not allow other origins: cookies are shared across ports on the same host. Staff changes and deactivation invalidate existing sessions. There is no password recovery workflow; keep the laptop account and independent database backups secure.
 
 The API applies default-deny backend authorization to all supported operations:
 

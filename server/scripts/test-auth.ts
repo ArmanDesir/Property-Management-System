@@ -33,6 +33,11 @@ try {
   assert.equal((await admin("/auth/me")).status, 200);
   assert.equal((await admin("/auth/status")).data.setupRequired, false);
   assert.equal(
+    (await admin.login("test-admin", "synthetic-incorrect-password")).status,
+    401,
+  );
+  assert.equal((await admin("/auth/me")).status, 200);
+  assert.equal(
     (await anonymous("/auth/setup", "POST", {
       displayName: "Second Administrator",
       username: "second-admin",
@@ -121,6 +126,8 @@ try {
   });
   assert.equal(invoiceResult.status, 201);
 
+  const rejectedWriteCountBefore = database.$client
+    .prepare("SELECT COUNT(*) AS count FROM guests").get()?.count;
   const noCsrf = await admin("/guests", "POST", {
     firstName: "Blocked",
     lastName: "Request",
@@ -133,14 +140,80 @@ try {
     email: "origin@example.test",
   }, { origin: "https://attacker.invalid" });
   assert.equal(foreignOrigin.status, 403);
+  const alternateLoopbackPortOrigin = await admin("/guests", "POST", {
+    firstName: "Blocked",
+    lastName: "Alternate Loopback Port",
+    email: "alternate-origin@example.test",
+  }, {
+    origin: (process.env.PMS_FRONTEND_ORIGIN ?? "http://127.0.0.1:5173") ===
+        "http://127.0.0.1:5174"
+      ? "http://127.0.0.1:5173"
+      : "http://127.0.0.1:5174",
+  });
+  assert.equal(alternateLoopbackPortOrigin.status, 403);
+  assert.equal(
+    database.$client.prepare("SELECT COUNT(*) AS count FROM guests").get()?.count,
+    rejectedWriteCountBefore,
+  );
   assert.equal(
     (await admin("/missing-protected-route")).status,
     403,
   );
 
+  const previousCsrfToken = admin.csrfToken();
+  assert.equal(typeof previousCsrfToken, "string");
   const frontDeskLogin = await admin.login("front-desk", "synthetic-frontdesk-password");
   assert.equal(frontDeskLogin.status, 200);
   assert.equal(frontDeskLogin.data.user.role, "front_desk");
+  const loginCookies = frontDeskLogin.response.headers.getSetCookie();
+  assert.ok(loginCookies.some((cookie) =>
+    cookie.startsWith("pms_session=") &&
+    /(?:^|;\s*)Path=\/api(?:;|$)/.test(cookie) &&
+    /(?:^|;\s*)HttpOnly(?:;|$)/.test(cookie)
+  ));
+  assert.ok(loginCookies.some((cookie) =>
+    cookie.startsWith("pms_csrf=") &&
+    /(?:^|;\s*)Path=\/(?:;|$)/.test(cookie) &&
+    /(?:^|;\s*)SameSite=Strict(?:;|$)/.test(cookie)
+  ));
+  assert.ok(loginCookies.some((cookie) =>
+    cookie.startsWith("pms_csrf=") &&
+    /(?:^|;\s*)Path=\/api(?:;|$)/.test(cookie) &&
+    /(?:^|;\s*)Max-Age=0(?:;|$)/.test(cookie)
+  ));
+  const refreshedToken = admin.csrfToken();
+  assert.equal(typeof refreshedToken, "string");
+  assert.equal(refreshedToken !== previousCsrfToken, true);
+  const invalidCsrfCountBefore = database.$client
+    .prepare("SELECT COUNT(*) AS count FROM guests").get()?.count;
+  assert.equal(
+    (await admin("/guests", "POST", {
+      firstName: "Rejected",
+      lastName: "Invalid CSRF",
+      email: "invalid-csrf@example.test",
+    }, { csrf: "0".repeat(64) })).status,
+    403,
+  );
+  assert.equal(
+    (await admin("/guests", "POST", {
+      firstName: "Rejected",
+      lastName: "Stale CSRF",
+      email: "stale-csrf@example.test",
+    }, { csrf: previousCsrfToken ?? "" })).status,
+    403,
+  );
+  assert.equal(
+    database.$client.prepare("SELECT COUNT(*) AS count FROM guests").get()?.count,
+    invalidCsrfCountBefore,
+  );
+  assert.equal(
+    (await admin("/guests", "POST", {
+      firstName: "Synthetic",
+      lastName: "Refreshed CSRF",
+      email: "refreshed-csrf@example.test",
+    })).status,
+    201,
+  );
   assert.equal((await admin("/properties")).status, 200);
   assert.equal((await admin("/guests")).status, 200);
   assert.equal((await admin("/reservations")).status, 200);
@@ -241,7 +314,39 @@ try {
   assert.equal(me.status, 200);
   const logout = await admin("/auth/logout", "POST");
   assert.equal(logout.status, 204);
+  const logoutCookies = logout.response.headers.getSetCookie();
+  assert.ok(logoutCookies.some((cookie) =>
+    cookie.startsWith("pms_csrf=") &&
+    /(?:^|;\s*)Path=\/(?:;|$)/.test(cookie) &&
+    /(?:^|;\s*)Max-Age=0(?:;|$)/.test(cookie)
+  ));
+  assert.ok(logoutCookies.some((cookie) =>
+    cookie.startsWith("pms_csrf=") &&
+    /(?:^|;\s*)Path=\/api(?:;|$)/.test(cookie) &&
+    /(?:^|;\s*)Max-Age=0(?:;|$)/.test(cookie)
+  ));
   assert.equal((await admin("/properties")).status, 401);
+  assert.equal(
+    (await admin.login("test-admin", "synthetic-test-password-123")).status,
+    200,
+  );
+  database.$client.prepare("UPDATE auth_sessions SET expires_at = ? WHERE staff_id = ?")
+    .run(new Date(0).toISOString(), adminId);
+  assert.equal((await admin("/auth/me")).status, 401);
+  const expiredSessionGuestCount = database.$client
+    .prepare("SELECT COUNT(*) AS count FROM guests").get()?.count;
+  assert.equal(
+    (await admin("/guests", "POST", {
+      firstName: "Rejected",
+      lastName: "Expired Session",
+      email: "expired-session@example.test",
+    })).status,
+    401,
+  );
+  assert.equal(
+    database.$client.prepare("SELECT COUNT(*) AS count FROM guests").get()?.count,
+    expiredSessionGuestCount,
+  );
 
   console.log("Authentication and authorization integration tests passed.");
 } finally {

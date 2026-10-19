@@ -6,7 +6,7 @@ type ApiResult = {
 
 type RequestOptions = {
   authenticated?: boolean;
-  csrf?: boolean;
+  csrf?: boolean | string;
   origin?: string | null;
   headers?: Record<string, string>;
 };
@@ -18,6 +18,7 @@ export type TestApiRequest = (((
   options?: RequestOptions,
 ) => Promise<ApiResult>) & {
   login(username: string, password: string): Promise<ApiResult>;
+  csrfToken(): string | null;
 });
 
 export async function createTestApiClient(
@@ -34,7 +35,10 @@ export async function createTestApiClient(
     const headers = new Headers(options.headers);
     if (body !== undefined) headers.set("content-type", "application/json");
     if (options.origin !== null) {
-      headers.set("origin", options.origin ?? "http://127.0.0.1:5173");
+      headers.set(
+        "origin",
+        options.origin ?? process.env.PMS_FRONTEND_ORIGIN ?? "http://127.0.0.1:5173",
+      );
     }
     if (options.authenticated !== false && cookies.length > 0) {
       headers.set("cookie", cookies.join("; "));
@@ -43,7 +47,11 @@ export async function createTestApiClient(
         !["GET", "HEAD", "OPTIONS"].includes(method.toUpperCase())
       ) {
         const csrfCookie = cookies.find((cookie) => cookie.startsWith("pms_csrf="));
-        if (csrfCookie) headers.set("x-csrf-token", csrfCookie.slice("pms_csrf=".length));
+        if (typeof options.csrf === "string") {
+          headers.set("x-csrf-token", options.csrf);
+        } else if (csrfCookie) {
+          headers.set("x-csrf-token", csrfCookie.slice("pms_csrf=".length));
+        }
       }
     }
     const response = await fetch(`${baseUrl}${path}`, {
@@ -71,6 +79,10 @@ export async function createTestApiClient(
   }) as TestApiRequest;
   request.login = (username, password) =>
     request("/auth/login", "POST", { username, password });
+  request.csrfToken = () => {
+    const csrfCookie = cookies.find((cookie) => cookie.startsWith("pms_csrf="));
+    return csrfCookie ? csrfCookie.slice("pms_csrf=".length) : null;
+  };
 
   if (!initializeAdministrator) return request;
   const setup = await request("/auth/status", "GET", undefined, { authenticated: false });
