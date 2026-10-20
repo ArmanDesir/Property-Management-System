@@ -13,6 +13,16 @@ const database = createDatabase(resolve(testDirectory, "phase11-test.sqlite"));
 const migrationsFolder = resolve(process.cwd(), "src/db/migrations");
 let server: ReturnType<ReturnType<typeof createApp>["listen"]> | undefined;
 
+function localDate(value: Date): string {
+  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`;
+}
+
+function addDays(date: string, days: number): string {
+  const value = new Date(`${date}T12:00:00`);
+  value.setDate(value.getDate() + days);
+  return localDate(value);
+}
+
 try {
   await runMigrations(database, migrationsFolder);
   server = createApp(database).listen(0, "127.0.0.1");
@@ -30,7 +40,7 @@ try {
   });
   const propertyTwo = await admin("/properties", "POST", {
     name: "Synthetic Phase 11 Hotel Two",
-    propertyType: "hotel",
+    propertyType: "resort",
   });
   assert.equal(propertyOne.status, 201);
   assert.equal(propertyTwo.status, 201);
@@ -52,9 +62,15 @@ try {
     capacity: 2,
     baseNightlyRate: 100,
   });
+  const unitOtherTwo = await admin(`/properties/${propertyTwoId}/units`, "POST", {
+    name: "202",
+    capacity: 2,
+    baseNightlyRate: 100,
+  });
   assert.equal(unitOne.status, 201);
   assert.equal(unitTwo.status, 201);
   assert.equal(unitOther.status, 201);
+  assert.equal(unitOtherTwo.status, 201);
 
   const frontDeskCreated = await admin("/staff", "POST", {
     displayName: "Synthetic Phase 11 Front Desk",
@@ -81,10 +97,18 @@ try {
     password: "synthetic-phase11-manager-password",
     propertyIds: [propertyOneId],
   });
+  const resortManagerCreated = await admin("/staff", "POST", {
+    displayName: "Synthetic Phase 11 Resort Manager",
+    username: "phase11-resort-manager",
+    role: "property_manager",
+    password: "synthetic-phase11-resort-manager-password",
+    propertyIds: [propertyTwoId],
+  });
   assert.equal(frontDeskCreated.status, 201);
   assert.equal(housekeepingCreated.status, 201);
   assert.equal(accountingCreated.status, 201);
   assert.equal(managerCreated.status, 201);
+  assert.equal(resortManagerCreated.status, 201);
   const managerId = managerCreated.data.staff.id as number;
   const frontDeskId = frontDeskCreated.data.staff.id as number;
   assert.deepEqual(managerCreated.data.staff.propertyIds, [propertyOneId]);
@@ -103,6 +127,200 @@ try {
     numberOfGuests: 1,
   });
   assert.equal(reservation.status, 201);
+  const secondPropertyReservation = await admin("/reservations", "POST", {
+    guestId: guest.data.guest.id,
+    unitId: unitOther.data.unit.id,
+    checkIn: "2032-01-10",
+    checkOut: "2032-01-12",
+    numberOfGuests: 1,
+  });
+  assert.equal(secondPropertyReservation.status, 201);
+
+  const adminCalendarProperties = await admin("/room-availability/properties");
+  assert.equal(adminCalendarProperties.status, 200);
+  assert.deepEqual(
+    adminCalendarProperties.data.properties.map((property: { id: number }) => property.id),
+    [propertyOneId, propertyTwoId],
+  );
+  const adminAvailabilityOne = await admin(
+    `/room-availability/${propertyOneId}?from=2032-01-10&to=2032-01-13`,
+  );
+  const adminAvailabilityTwo = await admin(
+    `/room-availability/${propertyTwoId}?from=2032-01-10&to=2032-01-13`,
+  );
+  assert.equal(adminAvailabilityOne.status, 200);
+  assert.equal(adminAvailabilityTwo.status, 200);
+  assert.deepEqual(
+    adminAvailabilityOne.data.availability.rooms.map((room: { id: number }) => room.id),
+    [unitOne.data.unit.id, unitTwo.data.unit.id].sort(
+      (left: number, right: number) => left - right,
+    ),
+  );
+  assert.deepEqual(
+    adminAvailabilityTwo.data.availability.rooms.map((room: { id: number }) => room.id),
+    [unitOther.data.unit.id, unitOtherTwo.data.unit.id].sort(
+      (left: number, right: number) => left - right,
+    ),
+  );
+  assert.deepEqual(
+    adminAvailabilityOne.data.availability.rooms.map(
+      (room: { nights: Array<{ status: string }> }) => room.nights[0].status,
+    ).sort(),
+    ["available", "reserved"],
+  );
+  assert.deepEqual(
+    adminAvailabilityTwo.data.availability.rooms.map(
+      (room: { nights: Array<{ status: string }> }) => room.nights[0].status,
+    ).sort(),
+    ["available", "reserved"],
+  );
+  const intervalAvailability = await admin(
+    `/room-availability/${propertyOneId}?from=2032-01-09&to=2032-01-13`,
+  );
+  const twoNightRoom = intervalAvailability.data.availability.rooms.find(
+    (room: { id: number }) => room.id === unitOne.data.unit.id,
+  );
+  assert.deepEqual(
+    twoNightRoom.nights.map((night: { date: string; status: string }) => [
+      night.date,
+      night.status,
+    ]),
+    [
+      ["2032-01-09", "available"],
+      ["2032-01-10", "reserved"],
+      ["2032-01-11", "reserved"],
+      ["2032-01-12", "available"],
+    ],
+  );
+
+  const timelineUnit = await admin(`/properties/${propertyTwoId}/units`, "POST", {
+    name: "203",
+    capacity: 2,
+    baseNightlyRate: 100,
+  });
+  assert.equal(timelineUnit.status, 201);
+  const timelineUnitId = timelineUnit.data.unit.id as number;
+  const timelineStart = localDate(new Date());
+  const timelineDate = (offset: number) => addDays(timelineStart, offset);
+  const createTimelineReservation = (checkIn: string, checkOut: string) =>
+    admin("/reservations", "POST", {
+      guestId: guest.data.guest.id,
+      unitId: timelineUnitId,
+      checkIn,
+      checkOut,
+      numberOfGuests: 1,
+    });
+  const checkedInReservation = await createTimelineReservation(timelineDate(0), timelineDate(2));
+  const consecutiveReservation = await createTimelineReservation(timelineDate(2), timelineDate(4));
+  const cancelledReservation = await createTimelineReservation(timelineDate(4), timelineDate(6));
+  assert.equal(checkedInReservation.status, 201);
+  assert.equal(consecutiveReservation.status, 201);
+  assert.equal(cancelledReservation.status, 201);
+  assert.equal(
+    (await admin(`/reservations/${checkedInReservation.data.reservation.id}/status`, "PATCH", {
+      status: "confirmed",
+    })).status,
+    200,
+  );
+  database.$client.prepare(`
+    UPDATE reservations
+    SET stay_status = 'checked_in', actual_check_in_at = ?
+    WHERE id = ?
+  `).run(
+    `${timelineDate(0)}T12:00:00.000Z`,
+    checkedInReservation.data.reservation.id,
+  );
+  assert.equal(
+    (await admin(`/reservations/${cancelledReservation.data.reservation.id}/status`, "PATCH", {
+      status: "cancelled",
+    })).status,
+    200,
+  );
+  const timelineAvailability = await admin(
+    `/room-availability/${propertyTwoId}?from=${timelineDate(-1)}&to=${timelineDate(8)}`,
+  );
+  const timelineRoom = timelineAvailability.data.availability.rooms.find(
+    (room: { id: number }) => room.id === timelineUnitId,
+  );
+  assert.equal(timelineRoom.housekeepingStatus, "dirty");
+  assert.deepEqual(
+    timelineRoom.nights.map((night: { date: string; status: string }) => [
+      night.date,
+      night.status,
+    ]),
+    [
+      [timelineDate(-1), "available"],
+      [timelineDate(0), "occupied"],
+      [timelineDate(1), "occupied"],
+      [timelineDate(2), "reserved"],
+      [timelineDate(3), "reserved"],
+      [timelineDate(4), "available"],
+      [timelineDate(5), "available"],
+      [timelineDate(6), "available"],
+      [timelineDate(7), "available"],
+    ],
+  );
+
+  const completedUnit = await admin(`/properties/${propertyTwoId}/units`, "POST", {
+    name: "204",
+    capacity: 2,
+    baseNightlyRate: 100,
+  });
+  assert.equal(completedUnit.status, 201);
+  const completedReservation = await admin("/reservations", "POST", {
+    guestId: guest.data.guest.id,
+    unitId: completedUnit.data.unit.id,
+    checkIn: timelineDate(0),
+    checkOut: timelineDate(2),
+    numberOfGuests: 1,
+  });
+  assert.equal(completedReservation.status, 201);
+  assert.equal(
+    (await admin(`/reservations/${completedReservation.data.reservation.id}/status`, "PATCH", {
+      status: "confirmed",
+    })).status,
+    200,
+  );
+  database.$client.prepare(`
+    UPDATE reservations
+    SET stay_status = 'checked_in', actual_check_in_at = ?
+    WHERE id = ?
+  `).run(
+    `${timelineDate(0)}T12:00:00.000Z`,
+    completedReservation.data.reservation.id,
+  );
+  database.$client.prepare(`
+    UPDATE reservations SET stay_status = 'checked_out', actual_check_out_at = ?
+    WHERE id = ?
+  `).run(
+    `${timelineDate(2)}T00:30:00+14:00`,
+    completedReservation.data.reservation.id,
+  );
+  assert.equal(
+    (await admin(`/reservations/${completedReservation.data.reservation.id}/status`, "PATCH", {
+      status: "completed",
+    })).status,
+    200,
+  );
+  const completedAvailability = await admin(
+    `/room-availability/${propertyTwoId}?from=${timelineDate(-1)}&to=${timelineDate(4)}`,
+  );
+  const completedRoom = completedAvailability.data.availability.rooms.find(
+    (room: { id: number }) => room.id === completedUnit.data.unit.id,
+  );
+  assert.deepEqual(
+    completedRoom.nights.map((night: { date: string; status: string }) => [
+      night.date,
+      night.status,
+    ]),
+    [
+      [timelineDate(-1), "available"],
+      [timelineDate(0), "occupied"],
+      [timelineDate(1), "available"],
+      [timelineDate(2), "available"],
+      [timelineDate(3), "available"],
+    ],
+  );
 
   const otherPropertyRequest = await admin("/maintenance", "POST", {
     propertyId: propertyTwoId,
@@ -155,6 +373,27 @@ try {
     [propertyOneId],
   );
   assert.equal(managerDashboard.data.dashboard.operations.availableRooms, 1);
+
+  const resortManager = await createTestApiClient(baseUrl, false);
+  assert.equal(
+    (await resortManager.login(
+      "phase11-resort-manager",
+      "synthetic-phase11-resort-manager-password",
+    )).status,
+    200,
+  );
+  const resortManagerProperties = await resortManager("/room-availability/properties");
+  assert.equal(resortManagerProperties.status, 200);
+  assert.deepEqual(
+    resortManagerProperties.data.properties.map((property: { id: number }) => property.id),
+    [propertyTwoId],
+  );
+  assert.equal(
+    (await resortManager(
+      `/room-availability/${propertyTwoId}?from=2032-01-10&to=2032-01-13`,
+    )).data.availability.summary.totalRooms,
+    4,
+  );
 
   const maintenanceOptions = await manager("/maintenance/options");
   assert.equal(maintenanceOptions.status, 200);
@@ -337,6 +576,11 @@ try {
   assert.equal(
     (await frontDesk.login("phase11-front-desk", "synthetic-phase11-frontdesk-password")).status,
     200,
+  );
+  const frontDeskProperties = await frontDesk("/room-availability/properties");
+  assert.deepEqual(
+    frontDeskProperties.data.properties.map((property: { id: number }) => property.id),
+    [propertyOneId, propertyTwoId],
   );
   assert.equal((await frontDesk(`/room-availability/${propertyOneId}?from=2032-01-10&to=2032-01-13`)).status, 200);
   assert.equal((await housekeeper("/room-availability/properties")).status, 403);

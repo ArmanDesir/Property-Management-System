@@ -79,11 +79,14 @@ export function RoomAvailabilityPage({
     return () => { active = false; };
   }, [propertyId, range.from, range.to, searchEnabled, checkIn, checkOut, refreshKey, queryKey]);
 
-  const visibleRooms = availability?.rooms.filter((room) =>
+  const selectedAvailability = availability?.property.id === Number(propertyId)
+    ? availability
+    : null;
+  const visibleRooms = selectedAvailability?.rooms.filter((room) =>
     statusFilter === "all" || room.nights.some((night) => night.status === statusFilter)
   ) ?? [];
-  const summary = availability
-    ? summarizeForDate(availability.rooms, date)
+  const summary = selectedAvailability
+    ? summarizeForDate(selectedAvailability.rooms, date)
     : null;
 
   const changePeriod = (direction: number) => {
@@ -105,10 +108,10 @@ export function RoomAvailabilityPage({
         <p className="page-intro">Reservation nights use [check-in, check-out). Dirty rooms remain visible and require housekeeping attention; they are not automatically out of service.</p></div>
     </div>
     {error && <ErrorState message={error} />}
-    {properties.length === 0 && !error && <div className="state-panel empty-state"><h2>No hotel properties available</h2><p>Only active hotel properties appear in this calendar.</p></div>}
+    {properties.length === 0 && !error && <div className="state-panel empty-state"><h2>No properties available</h2><p>Only active properties you are authorized to access appear in this calendar.</p></div>}
     {properties.length > 0 && <>
       <div className="room-calendar-controls">
-        <label>Hotel <select value={propertyId} onChange={(e) => setPropertyId(e.target.value)}>
+        <label>Property <select value={propertyId} onChange={(e) => setPropertyId(e.target.value)}>
           {properties.map((property) => <option key={property.id} value={property.id}>{property.name}</option>)}
         </select></label>
         <label>Date <input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>

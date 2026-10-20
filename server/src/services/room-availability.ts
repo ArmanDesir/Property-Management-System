@@ -9,14 +9,12 @@ export function listCalendarProperties(database: PmsDatabase, actor: Authenticat
   if (actor.role === "administrator" || actor.role === "front_desk") {
     return database.$client.prepare(`
       SELECT id, name, property_type AS propertyType FROM properties
-      WHERE status = 'active' AND property_type = 'hotel'
+      WHERE status = 'active'
       ORDER BY name COLLATE NOCASE, id
     `).all();
   }
   if (actor.role === "property_manager") {
-    const assigned = listTaskProperties(database, actor)
-      .filter((property) => property.propertyType === "hotel");
-    return assigned;
+    return listTaskProperties(database, actor);
   }
   throw new HttpError(403, "Your staff role cannot view room availability.");
 }
@@ -34,7 +32,11 @@ export function getRoomAvailability(
 ) {
   const property = listCalendarProperties(database, actor)
     .find((row) => numberValue(row.id) === input.propertyId);
-  if (!property) throw new HttpError(404, "Hotel property not found.");
+  if (!property) throw new HttpError(404, "Property not found.");
+  const propertyTimezone = textValue(database.$client.prepare(
+    "SELECT timezone FROM properties WHERE id = ?",
+  ).get(input.propertyId)?.timezone);
+  const toPropertyDate = createPropertyDateFormatter(propertyTimezone);
   const days = calendarDays(input.from, input.to);
   if (input.checkIn !== null && input.checkOut !== null) {
     calendarDays(input.checkIn, input.checkOut);
@@ -52,13 +54,16 @@ export function getRoomAvailability(
       r.check_in, r.check_out, r.actual_check_in_at, r.actual_check_out_at
     FROM units u
     LEFT JOIN reservations r ON r.unit_id = u.id AND (
-      (r.lifecycle_status IN ('pending', 'confirmed')
-        AND r.check_in < ? AND r.check_out > ?)
-      OR (r.stay_status IN ('checked_in', 'checked_out')
-        AND r.actual_check_in_at IS NOT NULL
-        AND substr(r.actual_check_in_at, 1, 10) < ?
-        AND (r.actual_check_out_at IS NULL
-          OR substr(r.actual_check_out_at, 1, 10) > ?))
+      r.lifecycle_status <> 'cancelled' AND (
+        (r.lifecycle_status IN ('pending', 'confirmed')
+          AND r.stay_status IN ('not_checked_in', 'checked_in')
+          AND r.check_in < ? AND r.check_out > ?)
+        OR (r.stay_status = 'checked_out'
+          AND r.actual_check_in_at IS NOT NULL
+          AND r.actual_check_out_at IS NOT NULL
+          AND date(r.actual_check_in_at) < date(?, '+1 day')
+          AND date(r.actual_check_out_at) > date(?, '-1 day'))
+      )
     )
     WHERE u.property_id = ? AND u.archived_at IS NULL
     ORDER BY u.name COLLATE NOCASE, u.id, r.id
@@ -91,11 +96,11 @@ export function getRoomAvailability(
     unitType: room.unitType,
     operationalStatus: room.operationalStatus,
     housekeepingStatus: room.housekeepingStatus,
-    nights: days.map((date) => ({ date, ...nightStatus(room, date) })),
+    nights: days.map((date) => ({ date, ...nightStatus(room, date, toPropertyDate) })),
     availableForStay: input.checkIn === null || input.checkOut === null
       ? null
       : calendarDays(input.checkIn, input.checkOut).every((date) =>
-        nightStatus(room, date).status === "available"
+        nightStatus(room, date, toPropertyDate).status === "available"
       ),
   }));
   const selectedStatuses = rooms.map((room) => room.nights[0]?.status ?? "available");
@@ -121,7 +126,7 @@ export function getRoomAvailability(
     definitions: {
       available: "Active room with no blocking reservation or active stay on that night.",
       reserved: "A pending or confirmed reservation blocks this room night.",
-      occupied: "Actual check-in/check-out timestamps indicate an in-house stay; an unclosed active stay blocks subsequent nights.",
+      occupied: "A checked-in stay occupies scheduled nights through, but not including, its scheduled checkout. Completed stays are shown only through actual checkout.",
       unavailable: "The unit is inactive or in maintenance. Dirty/cleaning status is separate and does not itself block booking.",
       pendingReservations: "Pending and confirmed reservations block the half-open stay interval [check-in, check-out).",
     },
@@ -141,23 +146,31 @@ function nightStatus(
     stays: Array<Record<string, unknown>>;
   },
   date: string,
+  toPropertyDate: (value: string) => string,
 ): { status: RoomNightStatus; reason: string | null } {
   for (const stay of room.stays) {
-    if (
-      stay.stay_status === "checked_in" &&
-      typeof stay.actual_check_in_at === "string" &&
-      stay.actual_check_in_at.slice(0, 10) <= date &&
-      (stay.actual_check_out_at === null ||
-        (typeof stay.actual_check_out_at === "string" &&
-          date < stay.actual_check_out_at.slice(0, 10)))
-    ) return { status: "occupied", reason: "An actual stay is in progress." };
+    if (stay.lifecycle_status === "cancelled") continue;
     if (
       stay.stay_status === "checked_out" &&
       typeof stay.actual_check_in_at === "string" &&
       typeof stay.actual_check_out_at === "string" &&
-      stay.actual_check_in_at.slice(0, 10) <= date &&
-      date < stay.actual_check_out_at.slice(0, 10)
+      toPropertyDate(stay.actual_check_in_at) <= date &&
+      date < toPropertyDate(stay.actual_check_out_at)
     ) return { status: "occupied", reason: "An actual stay occupied this night." };
+    if (
+      (stay.lifecycle_status === "pending" || stay.lifecycle_status === "confirmed") &&
+      typeof stay.check_in === "string" &&
+      typeof stay.check_out === "string" &&
+      stay.check_in <= date &&
+      date < stay.check_out
+    ) {
+      if (stay.stay_status === "checked_in") {
+        return { status: "occupied", reason: "A checked-in stay occupies this scheduled night." };
+      }
+      if (stay.stay_status === "not_checked_in") {
+        return { status: "reserved", reason: "A pending or confirmed reservation holds this night." };
+      }
+    }
   }
   if (room.operationalStatus !== "active") {
     return {
@@ -167,16 +180,37 @@ function nightStatus(
         : "The room is inactive.",
     };
   }
-  for (const stay of room.stays) {
-    if (
-      (stay.lifecycle_status === "pending" || stay.lifecycle_status === "confirmed") &&
-      typeof stay.check_in === "string" &&
-      typeof stay.check_out === "string" &&
-      stay.check_in <= date &&
-      date < stay.check_out
-    ) return { status: "reserved", reason: "A pending or confirmed reservation holds this night." };
-  }
   return { status: "available", reason: null };
+}
+
+function createPropertyDateFormatter(timeZone: string): (value: string) => string {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const cache = new Map<string, string>();
+  return (value) => {
+    const cached = cache.get(value);
+    if (cached) return cached;
+    const timestamp = new Date(value);
+    if (Number.isNaN(timestamp.valueOf())) {
+      throw new Error("Database returned an invalid stay timestamp for room availability.");
+    }
+    const parts = formatter.formatToParts(timestamp);
+    const part = (type: Intl.DateTimeFormatPartTypes) =>
+      parts.find((item) => item.type === type)?.value;
+    const year = part("year");
+    const month = part("month");
+    const day = part("day");
+    if (!year || !month || !day) {
+      throw new Error("Could not determine the property-local stay date.");
+    }
+    const date = `${year}-${month}-${day}`;
+    cache.set(value, date);
+    return date;
+  };
 }
 
 function calendarDays(from: string, to: string): string[] {
