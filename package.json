@@ -24,7 +24,8 @@
     "test:billing": "npm run test:billing --workspace server",
     "test:reports": "npm run test:reports --workspace server",
     "test:phase11": "npm run test:phase11 --workspace server",
-    "test": "npm run test:db && npm run test:api && npm run test:billing && npm run test:reports && npm run test:auth && npm run test:maintenance && npm run test:phase11"
+    "test:navigation": "node client/scripts/test-navigation.mjs",
+    "test": "npm run test:db && npm run test:api && npm run test:billing && npm run test:reports && npm run test:auth && npm run test:maintenance && npm run test:phase11 && npm run test:navigation"
   },
   "devDependencies": {
     "concurrently": "^9.1.2",

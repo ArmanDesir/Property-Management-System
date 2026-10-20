@@ -11,6 +11,7 @@ export type FrontDeskReservation = ReservationRecord;
 
 export interface FrontDeskDashboard {
   date: string;
+  properties: Array<{ id: number; name: string; status: string }>;
   summary: {
     arrivalsToday: number;
     departuresToday: number;
@@ -38,30 +39,50 @@ const frontDeskSelect = `
 export function listFrontDesk(
   database: PmsDatabase,
   date: string,
+  propertyId?: number,
 ): FrontDeskDashboard {
+  if (
+    propertyId !== undefined &&
+    !database.$client.prepare("SELECT 1 FROM properties WHERE id = ?").get(propertyId)
+  ) {
+    throw new HttpError(404, "Property not found.");
+  }
+  const propertyFilter = propertyId === undefined ? "" : " AND r.property_id = ?";
+  const propertyParameter = propertyId === undefined ? [] : [String(propertyId)];
   const arrivals = queryReservations(database, `
     r.lifecycle_status = 'confirmed'
     AND r.stay_status = 'not_checked_in'
     AND r.check_in = ?
     AND r.check_out > ?
-  `, date, date);
+    ${propertyFilter}
+  `, date, date, ...propertyParameter);
   const departures = queryReservations(database, `
     r.lifecycle_status = 'confirmed'
     AND r.stay_status = 'checked_in'
     AND r.check_out = ?
-  `, date);
+    ${propertyFilter}
+  `, date, ...propertyParameter);
   const inHouse = queryReservations(database, `
     r.lifecycle_status = 'confirmed'
     AND r.stay_status = 'checked_in'
-  `);
+    ${propertyFilter}
+  `, ...propertyParameter);
   const overdueArrivals = queryReservations(database, `
     r.lifecycle_status = 'confirmed'
     AND r.stay_status = 'not_checked_in'
     AND r.check_in < ?
     AND r.check_out > ?
-  `, date, date);
+    ${propertyFilter}
+  `, date, date, ...propertyParameter);
   return {
     date,
+    properties: database.$client.prepare(`
+      SELECT id, name, status FROM properties ORDER BY name COLLATE NOCASE, id
+    `).all().map((property) => ({
+      id: Number(property.id),
+      name: textValue(property.name),
+      status: textValue(property.status),
+    })),
     summary: {
       arrivalsToday: arrivals.length,
       departuresToday: departures.length,

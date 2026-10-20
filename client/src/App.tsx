@@ -75,6 +75,7 @@ function App() {
   const [setupToken, setSetupToken] = useState("");
   const [authError, setAuthError] = useState("");
   const [authRetry, setAuthRetry] = useState(0);
+  const [navigationOpen, setNavigationOpen] = useState(false);
 
   useEffect(() => {
     const onPopState = () => {
@@ -164,6 +165,7 @@ function App() {
     setPathname(url.pathname);
     setLocationSearch(url.search);
     setNotice("");
+    setNavigationOpen(false);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -220,7 +222,52 @@ function App() {
             ZCSMST<span className="brand-light">pms</span>
           </span>
         </a>
-        <nav className="main-nav" aria-label="Main navigation">
+        <button
+          className="navigation-toggle"
+          type="button"
+          aria-label={navigationOpen ? "Close navigation" : "Open navigation"}
+          aria-expanded={navigationOpen}
+          aria-controls="primary-navigation"
+          onClick={() => setNavigationOpen((open) => !open)}
+        >
+          <span />
+          <span />
+          <span />
+        </button>
+        <div className="topbar-actions">
+          <div className="staff-session">
+            <span className="staff-session-name">{staffUser.displayName}</span>
+            <button
+              className="nav-link sign-out"
+              onClick={() => {
+                void apiRequest("/auth/logout", "POST").then(() => {
+                  setStaffUser(null);
+                  setAuthMode("login");
+                  navigate("/");
+                }).catch((reason: unknown) => flash(errorMessage(reason)));
+              }}
+            >
+              Sign out
+            </button>
+          </div>
+          <div className="local-badge">
+            <span className={`status-dot ${status}`} />
+            {status === "checking"
+              ? "Connecting"
+              : status === "online"
+                ? "ZCSMST PMS ready"
+                : "API offline"}
+          </div>
+        </div>
+      </header>
+
+      <div className="app-layout">
+        <nav
+          id="primary-navigation"
+          className={navigationOpen ? "main-nav is-open" : "main-nav"}
+          aria-label="Main navigation"
+          onClick={() => setNavigationOpen(false)}
+        >
           <NavLink path="/" label="Dashboard" active={route.name === "dashboard"} navigate={navigate} />
           {(role === "administrator" || role === "front_desk") && (
             <>
@@ -258,31 +305,8 @@ function App() {
             <NavLink path="/maintenance" label="Maintenance" active={route.name === "maintenance"} navigate={navigate} />
           )}
         </nav>
-        <div className="staff-session">
-          <span className="staff-session-name">{staffUser.displayName}</span>
-          <button
-            className="nav-link sign-out"
-            onClick={() => {
-              void apiRequest("/auth/logout", "POST").then(() => {
-                setStaffUser(null);
-                setAuthMode("login");
-                navigate("/");
-              }).catch((reason: unknown) => flash(errorMessage(reason)));
-            }}
-          >
-            Sign out
-          </button>
-        </div>
-        <div className="local-badge">
-          <span className={`status-dot ${status}`} />
-          {status === "checking"
-            ? "Connecting"
-            : status === "online"
-              ? "ZCSMST PMS ready"
-              : "API offline"}
-        </div>
-      </header>
 
+        <div className="app-content">
       {notice && (
         <div className="success-banner" role="status">
           <span aria-hidden="true">✓</span>
@@ -408,6 +432,8 @@ function App() {
         <span>ZCSMST PMS</span>
         <span>Private by nature. Right on your machine.</span>
       </footer>
+        </div>
+      </div>
     </main>
   );
 }

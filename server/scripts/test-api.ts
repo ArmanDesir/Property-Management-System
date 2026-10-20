@@ -604,10 +604,116 @@ try {
   );
   assert.equal((await request("/front-desk?date=not-a-date")).status, 400);
   assert.equal((await request("/front-desk?date=2030-02-30")).status, 400);
+  assert.equal((await request(`/front-desk?date=${today}&propertyId=invalid`)).status, 400);
+  assert.equal((await request(`/front-desk?date=${today}&propertyId=999999`)).status, 404);
+  assert.equal((await request(`/front-desk?date=${today}&propertyId=1&propertyId=2`)).status, 400);
+
+  const siblingUnit = await request(`/properties/${propertyId}/units`, "POST", {
+    name: "Front Desk Sibling Unit",
+    capacity: 2,
+    baseNightlyRate: 120,
+  });
+  assert.equal(siblingUnit.status, 201);
+  const siblingUnitId = siblingUnit.data.unit.id as number;
+  const otherFrontDeskProperty = await request("/properties", "POST", {
+    name: "Front Desk Second Synthetic Property",
+    propertyType: "hotel",
+    address: "20 Example Road",
+    contactName: "Test Contact",
+    contactEmail: "front-desk@example.test",
+    contactPhone: "+1-555-0102",
+    defaultCurrency: "USD",
+    defaultCheckInTime: "15:00",
+    defaultCheckOutTime: "11:00",
+  });
+  assert.equal(otherFrontDeskProperty.status, 201);
+  const otherFrontDeskPropertyId = otherFrontDeskProperty.data.property.id as number;
+  const otherFrontDeskUnit = await request(
+    `/properties/${otherFrontDeskPropertyId}/units`,
+    "POST",
+    {
+      name: "Front Desk Other Property Unit",
+      capacity: 2,
+      baseNightlyRate: 120,
+    },
+  );
+  assert.equal(otherFrontDeskUnit.status, 201);
+  const otherFrontDeskUnitId = otherFrontDeskUnit.data.unit.id as number;
+  const siblingArrival = await request("/reservations", "POST", {
+    ...frontDeskInput,
+    unitId: siblingUnitId,
+  });
+  assert.equal(siblingArrival.status, 201);
+  const siblingArrivalId = siblingArrival.data.reservation.id as number;
+  assert.equal(
+    (await request(`/reservations/${siblingArrivalId}/status`, "PATCH", {
+      status: "confirmed",
+    })).status,
+    200,
+  );
+  const otherPropertyArrival = await request("/reservations", "POST", {
+    ...frontDeskInput,
+    unitId: otherFrontDeskUnitId,
+  });
+  assert.equal(otherPropertyArrival.status, 201);
+  const otherPropertyArrivalId = otherPropertyArrival.data.reservation.id as number;
+  assert.equal(
+    (await request(`/reservations/${otherPropertyArrivalId}/status`, "PATCH", {
+      status: "confirmed",
+    })).status,
+    200,
+  );
+
   const arrivalDashboard = await request(`/front-desk?date=${today}`);
   assert.equal(arrivalDashboard.status, 200);
-  assert.equal(arrivalDashboard.data.frontDesk.summary.arrivalsToday, 1);
-  assert.equal(arrivalDashboard.data.frontDesk.arrivals[0].id, arrivalId);
+  assert.equal(arrivalDashboard.data.frontDesk.summary.arrivalsToday, 3);
+  assert.deepEqual(
+    arrivalDashboard.data.frontDesk.arrivals.map(
+      (reservation: { id: number }) => reservation.id,
+    ).sort((left: number, right: number) => left - right),
+    [arrivalId, siblingArrivalId, otherPropertyArrivalId].sort(
+      (left, right) => left - right,
+    ),
+  );
+  assert.equal(
+    new Set(arrivalDashboard.data.frontDesk.arrivals.map(
+      (reservation: { unitId: number }) => reservation.unitId,
+    )).size,
+    3,
+  );
+  assert.equal(arrivalDashboard.data.frontDesk.properties.length, 2);
+  const filteredFrontDesk = await request(
+    `/front-desk?date=${today}&propertyId=${propertyId}`,
+  );
+  assert.equal(filteredFrontDesk.status, 200);
+  assert.equal(filteredFrontDesk.data.frontDesk.arrivals.length, 2);
+  assert.ok(filteredFrontDesk.data.frontDesk.arrivals.every(
+    (reservation: { propertyId: number }) => reservation.propertyId === propertyId,
+  ));
+  const otherPropertyFrontDesk = await request(
+    `/front-desk?date=${today}&propertyId=${otherFrontDeskPropertyId}`,
+  );
+  assert.equal(otherPropertyFrontDesk.status, 200);
+  assert.equal(otherPropertyFrontDesk.data.frontDesk.arrivals.length, 1);
+  assert.equal(otherPropertyFrontDesk.data.frontDesk.arrivals[0].id, otherPropertyArrivalId);
+  assert.equal(
+    (await request(`/reservations/${otherPropertyArrivalId}/check-in`, "POST")).status,
+    200,
+  );
+  const filteredInHouse = await request(
+    `/front-desk?date=${today}&propertyId=${otherFrontDeskPropertyId}`,
+  );
+  assert.equal(filteredInHouse.data.frontDesk.summary.checkedIn, 1);
+  assert.equal(filteredInHouse.data.frontDesk.inHouse[0].id, otherPropertyArrivalId);
+  const filteredDepartures = await request(
+    `/front-desk?date=${tomorrow}&propertyId=${otherFrontDeskPropertyId}`,
+  );
+  assert.equal(filteredDepartures.data.frontDesk.summary.departuresToday, 1);
+  assert.equal(filteredDepartures.data.frontDesk.departures[0].id, otherPropertyArrivalId);
+  assert.equal(
+    (await request(`/reservations/${otherPropertyArrivalId}/check-out`, "POST")).status,
+    200,
+  );
 
   const checkInAttempts = await Promise.all([
     request(`/reservations/${arrivalId}/check-in`, "POST"),
@@ -705,6 +811,14 @@ try {
   const overdueDashboard = await request(`/front-desk?date=${today}`);
   assert.equal(overdueDashboard.data.frontDesk.summary.overdueArrivals, 1);
   assert.equal(overdueDashboard.data.frontDesk.overdueArrivals[0].id, overdueReservationId);
+  const filteredOverdueDashboard = await request(
+    `/front-desk?date=${today}&propertyId=${propertyId}`,
+  );
+  assert.equal(filteredOverdueDashboard.data.frontDesk.overdueArrivals.length, 1);
+  assert.equal(
+    filteredOverdueDashboard.data.frontDesk.overdueArrivals[0].id,
+    overdueReservationId,
+  );
   assert.equal(
     (await request(`/reservations/${overdueReservationId}/check-in`, "POST")).status,
     200,
@@ -824,7 +938,7 @@ try {
   );
   assert.equal(
     (await request(`/properties/${propertyId}/units?includeArchived=true`)).data.units.length,
-    3,
+    4,
   );
   assert.throws(() => {
     database.$client.prepare("DELETE FROM properties WHERE id = ?").run(propertyId);

@@ -4,6 +4,7 @@ import { asyncHandler, HttpError } from "../middleware/http-errors.js";
 import {
   listFrontDesk,
 } from "../services/front-desk.js";
+import { parseRecordId } from "../services/validation.js";
 
 export function createFrontDeskRouter(database: PmsDatabase): Router {
   const router = Router();
@@ -14,7 +15,10 @@ export function createFrontDeskRouter(database: PmsDatabase): Router {
       const date = request.query.date === undefined
         ? localDate(new Date())
         : parseDate(request.query.date);
-      response.json({ frontDesk: listFrontDesk(database, date) });
+      const propertyId = request.query.propertyId === undefined
+        ? undefined
+        : parseRecordId(request.query.propertyId);
+      response.json({ frontDesk: listFrontDesk(database, date, propertyId) });
     }),
   );
 

@@ -9,6 +9,7 @@ import "./FrontDesk.css";
 
 type FrontDeskDashboard = {
   date: string;
+  properties: Array<{ id: number; name: string; status: string }>;
   summary: {
     arrivalsToday: number;
     departuresToday: number;
@@ -34,18 +35,21 @@ export function FrontDeskPage({
   flash: (message: string) => void;
 }) {
   const [date, setDate] = useState(localDate(new Date()));
+  const [propertyId, setPropertyId] = useState("");
   const [dashboard, setDashboard] = useState<FrontDeskDashboard | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [action, setAction] = useState<StayAction | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const refresh = async (selectedDate: string) => {
+  const refresh = async (selectedDate: string, selectedPropertyId = propertyId) => {
     setLoading(true);
     setError("");
     try {
+      const query = new URLSearchParams({ date: selectedDate });
+      if (selectedPropertyId) query.set("propertyId", selectedPropertyId);
       const result = await apiRequest<{ frontDesk: FrontDeskDashboard }>(
-        `/front-desk?date=${encodeURIComponent(selectedDate)}`,
+        `/front-desk?${query.toString()}`,
       );
       setDashboard(result.frontDesk);
     } catch (reason) {
@@ -56,8 +60,8 @@ export function FrontDeskPage({
   };
 
   useEffect(() => {
-    void refresh(date);
-  }, [date]);
+    void refresh(date, propertyId);
+  }, [date, propertyId]);
 
   const completeAction = async () => {
     if (!action) return;
@@ -91,14 +95,30 @@ export function FrontDeskPage({
           <h1 className="page-title">Front desk</h1>
           <p className="page-intro">Manage today’s arrivals and departures on this device.</p>
         </div>
-        <label className="front-desk-date">
-          <span className="field-label">Operating date</span>
-          <input
-            type="date"
-            value={date}
-            onChange={(event) => setDate(event.target.value)}
-          />
-        </label>
+        <div className="front-desk-filters">
+          <label className="front-desk-property">
+            <span className="field-label">Property</span>
+            <select
+              value={propertyId}
+              onChange={(event) => setPropertyId(event.target.value)}
+            >
+              <option value="">All properties</option>
+              {dashboard?.properties?.map((property) => (
+                <option key={property.id} value={property.id}>
+                  {property.name}{property.status === "archived" ? " (archived)" : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="front-desk-date">
+            <span className="field-label">Operating date</span>
+            <input
+              type="date"
+              value={date}
+              onChange={(event) => setDate(event.target.value)}
+            />
+          </label>
+        </div>
       </div>
 
       {error && <ErrorState message={error} />}
