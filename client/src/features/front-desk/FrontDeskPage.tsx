@@ -326,6 +326,9 @@ function StayConfirmDialog({
           {action.reservation.guestName} · {action.reservation.propertyName}
           {action.reservation.unitName ? ` · ${action.reservation.unitName}` : ""}
         </p>
+        {!checkingIn && (
+          <p>Any outstanding issued invoice balance must be paid before checkout. Record or review payments in Billing.</p>
+        )}
         <div className="dialog-actions">
           <button className="button button-secondary" onClick={onCancel} disabled={busy}>
             Keep stay unchanged

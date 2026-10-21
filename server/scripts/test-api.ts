@@ -602,6 +602,18 @@ try {
     (await request(`/reservations/${arrivalId}/status`, "PATCH", { status: "confirmed" })).status,
     200,
   );
+  assert.equal(
+    (await request(`/housekeeping/units/${unitId}/status`, "PATCH", {
+      status: "cleaning",
+    })).status,
+    200,
+  );
+  assert.equal(
+    (await request(`/housekeeping/units/${unitId}/status`, "PATCH", {
+      status: "clean",
+    })).status,
+    200,
+  );
   assert.equal((await request("/front-desk?date=not-a-date")).status, 400);
   assert.equal((await request("/front-desk?date=2030-02-30")).status, 400);
   assert.equal((await request(`/front-desk?date=${today}&propertyId=invalid`)).status, 400);
@@ -696,6 +708,18 @@ try {
   assert.equal(otherPropertyFrontDesk.status, 200);
   assert.equal(otherPropertyFrontDesk.data.frontDesk.arrivals.length, 1);
   assert.equal(otherPropertyFrontDesk.data.frontDesk.arrivals[0].id, otherPropertyArrivalId);
+  assert.equal(
+    (await request(`/housekeeping/units/${otherFrontDeskUnitId}/status`, "PATCH", {
+      status: "cleaning",
+    })).status,
+    200,
+  );
+  assert.equal(
+    (await request(`/housekeeping/units/${otherFrontDeskUnitId}/status`, "PATCH", {
+      status: "clean",
+    })).status,
+    200,
+  );
   assert.equal(
     (await request(`/reservations/${otherPropertyArrivalId}/check-in`, "POST")).status,
     200,
@@ -808,6 +832,12 @@ try {
     (await request(`/reservations/${overdueReservationId}/status`, "PATCH", { status: "confirmed" })).status,
     200,
   );
+  assert.equal(
+    (await request(`/housekeeping/units/${overdueUnitId}/status`, "PATCH", {
+      status: "clean",
+    })).status,
+    200,
+  );
   const overdueDashboard = await request(`/front-desk?date=${today}`);
   assert.equal(overdueDashboard.data.frontDesk.summary.overdueArrivals, 1);
   assert.equal(overdueDashboard.data.frontDesk.overdueArrivals[0].id, overdueReservationId);
@@ -825,7 +855,7 @@ try {
   );
   assert.equal(
     (await request(`/housekeeping/units/${overdueUnitId}/status`, "PATCH", {
-      status: "clean",
+      status: "cleaning",
     })).status,
     409,
   );
@@ -852,6 +882,63 @@ try {
     housekeeping_status: "dirty",
   });
   assert.equal(
+    (await request(`/reservations/${overdueReservationId}/status`, "PATCH", {
+      status: "completed",
+    })).status,
+    200,
+  );
+  const historicalCheckout = await request(`/reservations/${overdueReservationId}`);
+  assert.equal(historicalCheckout.status, 200);
+  assert.equal(historicalCheckout.data.reservation.status, "completed");
+  assert.equal(historicalCheckout.data.reservation.stayStatus, "checked_out");
+  const futureDirtyRoomStay = await request("/reservations", "POST", {
+    ...frontDeskInput,
+    unitId: overdueUnitId,
+    checkIn: tomorrow,
+    checkOut: dayAfterTomorrow,
+  });
+  assert.equal(futureDirtyRoomStay.status, 201);
+  const futureDirtyRoomStayId = futureDirtyRoomStay.data.reservation.id as number;
+  assert.equal(
+    (await request(`/reservations/${futureDirtyRoomStayId}/status`, "PATCH", {
+      status: "confirmed",
+    })).status,
+    200,
+  );
+  assert.equal(
+    (await request(`/reservations/${futureDirtyRoomStayId}`, "PUT", {
+      ...frontDeskInput,
+      unitId: overdueUnitId,
+      checkIn: tomorrow,
+      checkOut: dayAfterTomorrow,
+    })).status,
+    200,
+  );
+  assert.equal(
+    (await request("/reservations", "POST", {
+      ...frontDeskInput,
+      unitId: overdueUnitId,
+      checkIn: tomorrow,
+      checkOut: dayAfterTomorrow,
+    })).status,
+    409,
+  );
+  const dirtyRoomCheckIn = await request(
+    `/reservations/${futureDirtyRoomStayId}/check-in`,
+    "POST",
+  );
+  assert.equal(dirtyRoomCheckIn.status, 409);
+  assert.match(dirtyRoomCheckIn.data.error, /mark the room clean/i);
+  assert.equal(
+    (await request(`/reservations/${futureDirtyRoomStayId}`)).data.reservation.stayStatus,
+    "not_checked_in",
+  );
+  assert.equal(
+    database.$client.prepare("SELECT housekeeping_status FROM units WHERE id = ?")
+      .get(overdueUnitId)?.housekeeping_status,
+    "dirty",
+  );
+  assert.equal(
     (await request(`/housekeeping/units/${overdueUnitId}/status`, "PATCH", {
       status: "cleaning",
     })).status,
@@ -865,6 +952,38 @@ try {
   assert.equal(postCheckoutClean.status, 200);
   assert.ok(postCheckoutClean.data.unit.lastCleanedAt);
   assert.equal(postCheckoutClean.data.unit.operationalStatus, "active");
+  const cleanRoomStay = await request("/reservations", "POST", {
+    ...frontDeskInput,
+    unitId: overdueUnitId,
+  });
+  assert.equal(cleanRoomStay.status, 201);
+  const cleanRoomStayId = cleanRoomStay.data.reservation.id as number;
+  assert.equal(
+    (await request(`/reservations/${cleanRoomStayId}/status`, "PATCH", {
+      status: "confirmed",
+    })).status,
+    200,
+  );
+  assert.equal(
+    (await request(`/reservations/${cleanRoomStayId}/check-in`, "POST")).status,
+    200,
+  );
+  assert.equal(
+    (await request(`/reservations/${cleanRoomStayId}/check-out`, "POST")).status,
+    200,
+  );
+  assert.equal(
+    (await request(`/housekeeping/units/${overdueUnitId}/status`, "PATCH", {
+      status: "cleaning",
+    })).status,
+    200,
+  );
+  assert.equal(
+    (await request(`/housekeeping/units/${overdueUnitId}/status`, "PATCH", {
+      status: "clean",
+    })).status,
+    200,
+  );
   const stillBooked = await request(
     `/reservations/availability?unitId=${overdueUnitId}&checkIn=${yesterday}&checkOut=${tomorrow}&numberOfGuests=1`,
   );
@@ -896,7 +1015,7 @@ try {
   assert.equal(maintenanceUnit.housekeepingStatus, "dirty");
   assert.equal(maintenanceUnit.operationalStatus, "maintenance");
   const cleanedHistory = await request(`/reservations/${overdueReservationId}`);
-  assert.equal(cleanedHistory.data.reservation.status, "confirmed");
+  assert.equal(cleanedHistory.data.reservation.status, "completed");
   assert.equal(cleanedHistory.data.reservation.stayStatus, "checked_out");
 
   const raceInput = {

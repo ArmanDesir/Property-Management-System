@@ -118,7 +118,8 @@ export function checkInReservation(
     }
 
     const unit = client.prepare(`
-      SELECT u.id, u.property_id, u.status AS unit_status, u.archived_at,
+      SELECT u.id, u.property_id, u.status AS unit_status, u.housekeeping_status,
+        u.archived_at,
         p.status AS property_status, g.status AS guest_status
       FROM units u
       JOIN properties p ON p.id = u.property_id
@@ -139,6 +140,9 @@ export function checkInReservation(
     }
     if (unit.unit_status !== "active" || unit.archived_at !== null) {
       throw new HttpError(409, "The assigned unit is inactive, archived, or unavailable.");
+    }
+    if (unit.housekeeping_status !== "clean") {
+      throw new HttpError(409, "Housekeeping must mark the room clean before check-in.");
     }
 
     const today = localDate(now);
@@ -202,6 +206,36 @@ export function checkOutReservation(
     if (!unit) {
       throw new HttpError(409, "The assigned unit or related records are no longer valid.");
     }
+    const outstandingBalances = client.prepare(`
+      WITH paid_by_invoice AS (
+        SELECT invoice_id, SUM(amount_cents) AS paid_cents
+        FROM payments
+        GROUP BY invoice_id
+      )
+      SELECT i.currency,
+        SUM(i.total_cents - COALESCE(p.paid_cents, 0)) AS balance_cents
+      FROM invoices i
+      LEFT JOIN paid_by_invoice p ON p.invoice_id = i.id
+      WHERE i.reservation_id = ?
+        AND i.status = 'issued'
+        AND i.total_cents > COALESCE(p.paid_cents, 0)
+      GROUP BY i.currency
+      ORDER BY i.currency
+    `);
+    outstandingBalances.setReadBigInts(true);
+    const balances = outstandingBalances.all(id).map((row) => {
+      const amount = row.balance_cents;
+      if (typeof amount !== "bigint" || amount <= 0n) {
+        throw new Error("Database returned an invalid outstanding invoice balance.");
+      }
+      return `${textValue(row.currency)} ${formatCents(amount)}`;
+    });
+    if (balances.length > 0) {
+      throw new HttpError(
+        409,
+        `Outstanding balance must be paid before checkout: ${balances.join(", ")}.`,
+      );
+    }
     const checkInAt = textValue(existing.actual_check_in_at);
     if (now.getTime() < Date.parse(checkInAt)) {
       throw new HttpError(400, "Check-out time cannot be earlier than the recorded check-in time.");
@@ -238,6 +272,10 @@ function reservationWithUnitStatus(
   id: number,
 ): FrontDeskReservation {
   return getReservation(database, id);
+}
+
+function formatCents(amount: bigint): string {
+  return `${amount / 100n}.${(amount % 100n).toString().padStart(2, "0")}`;
 }
 
 function localDate(value: Date): string {

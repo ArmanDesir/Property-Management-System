@@ -13,6 +13,16 @@ const database = createDatabase(resolve(testDirectory, "billing-test.sqlite"));
 const migrationsFolder = resolve(process.cwd(), "src/db/migrations");
 let server: ReturnType<ReturnType<typeof createApp>["listen"]> | undefined;
 
+function localDate(value: Date): string {
+  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`;
+}
+
+function addDays(date: string, days: number): string {
+  const value = new Date(`${date}T12:00:00`);
+  value.setDate(value.getDate() + days);
+  return localDate(value);
+}
+
 try {
   await runMigrations(database, migrationsFolder);
   server = createApp(database).listen(0, "127.0.0.1");
@@ -287,7 +297,125 @@ try {
   assert.equal((await request("/invoices/999999")).status, 404);
   assert.deepEqual(database.$client.prepare("PRAGMA foreign_key_check").all(), []);
 
-  console.log("Invoice, tax, payment, idempotency, lifecycle, reservation snapshot, and concurrency API tests passed.");
+  const checkoutDate = localDate(new Date());
+  const checkoutTomorrow = addDays(checkoutDate, 1);
+  const createCheckoutStay = async (unitName: string) => {
+    const unit = await request(`/properties/${propertyId}/units`, "POST", {
+      name: unitName,
+      capacity: 2,
+      baseNightlyRate: 50,
+    });
+    assert.equal(unit.status, 201);
+    const checkoutUnitId = unit.data.unit.id as number;
+    assert.equal(
+      (await request(`/housekeeping/units/${checkoutUnitId}/status`, "PATCH", {
+        status: "cleaning",
+      })).status,
+      200,
+    );
+    assert.equal(
+      (await request(`/housekeeping/units/${checkoutUnitId}/status`, "PATCH", {
+        status: "clean",
+      })).status,
+      200,
+    );
+    const stay = await request("/reservations", "POST", {
+      guestId,
+      unitId: checkoutUnitId,
+      checkIn: checkoutDate,
+      checkOut: checkoutTomorrow,
+      numberOfGuests: 1,
+    });
+    assert.equal(stay.status, 201);
+    const checkoutReservationId = stay.data.reservation.id as number;
+    assert.equal(
+      (await request(`/reservations/${checkoutReservationId}/status`, "PATCH", {
+        status: "confirmed",
+      })).status,
+      200,
+    );
+    assert.equal(
+      (await request(`/reservations/${checkoutReservationId}/check-in`, "POST")).status,
+      200,
+    );
+    return { checkoutUnitId, checkoutReservationId };
+  };
+
+  const zeroBalanceStay = await createCheckoutStay("Checkout Zero Balance");
+  const zeroBalanceCheckout = await request(
+    `/reservations/${zeroBalanceStay.checkoutReservationId}/check-out`,
+    "POST",
+  );
+  assert.equal(zeroBalanceCheckout.status, 200);
+  assert.equal(zeroBalanceCheckout.data.reservation.stayStatus, "checked_out");
+
+  const unpaidStay = await createCheckoutStay("Checkout Outstanding Balance");
+  const unpaidInvoice = await request("/invoices", "POST", {
+    ...baseDraft,
+    reservationId: unpaidStay.checkoutReservationId,
+    items: [{ description: "Synthetic checkout charge", quantity: 1, unitPrice: "30.00" }],
+    taxRate: "0",
+  });
+  assert.equal(unpaidInvoice.status, 201);
+  const unpaidInvoiceId = unpaidInvoice.data.invoice.id as number;
+  assert.equal((await request(`/invoices/${unpaidInvoiceId}/issue`, "POST")).status, 200);
+  const partialCheckoutPayment = await request(`/invoices/${unpaidInvoiceId}/payments`, "POST", {
+    paymentDate: `${checkoutDate}T10:00:00.000Z`,
+    amount: "5.00",
+    method: "cash",
+    idempotencyKey: "checkout-partial-payment-001",
+  });
+  assert.equal(partialCheckoutPayment.status, 201);
+  assert.equal(partialCheckoutPayment.data.invoice.balanceCents, 2500);
+  const stateBeforeRejectedCheckout = database.$client.prepare(`
+    SELECT r.stay_status, r.actual_check_out_at, r.updated_at AS reservation_updated_at,
+      u.status AS unit_status, u.housekeeping_status, u.updated_at AS unit_updated_at
+    FROM reservations r
+    JOIN units u ON u.id = r.unit_id
+    WHERE r.id = ?
+  `).get(unpaidStay.checkoutReservationId);
+  const rejectedCheckout = await request(
+    `/reservations/${unpaidStay.checkoutReservationId}/check-out`,
+    "POST",
+  );
+  assert.equal(rejectedCheckout.status, 409);
+  assert.match(rejectedCheckout.data.error, /USD 25\.00/);
+  assert.doesNotMatch(rejectedCheckout.data.error, /Billing Guest/);
+  const stateAfterRejectedCheckout = database.$client.prepare(`
+    SELECT r.stay_status, r.actual_check_out_at, r.updated_at AS reservation_updated_at,
+      u.status AS unit_status, u.housekeeping_status, u.updated_at AS unit_updated_at
+    FROM reservations r
+    JOIN units u ON u.id = r.unit_id
+    WHERE r.id = ?
+  `).get(unpaidStay.checkoutReservationId);
+  assert.deepEqual(stateAfterRejectedCheckout, stateBeforeRejectedCheckout);
+  assert.equal(stateAfterRejectedCheckout?.stay_status, "checked_in");
+  assert.equal(stateAfterRejectedCheckout?.actual_check_out_at, null);
+  const finalCheckoutPayment = await request(`/invoices/${unpaidInvoiceId}/payments`, "POST", {
+    paymentDate: `${checkoutDate}T11:00:00.000Z`,
+    amount: "25.00",
+    method: "cash",
+    idempotencyKey: "checkout-final-payment-001",
+  });
+  assert.equal(finalCheckoutPayment.status, 201);
+  assert.equal(finalCheckoutPayment.data.invoice.balanceCents, 0);
+  const paidCheckout = await request(
+    `/reservations/${unpaidStay.checkoutReservationId}/check-out`,
+    "POST",
+  );
+  assert.equal(paidCheckout.status, 200);
+  assert.equal(paidCheckout.data.reservation.stayStatus, "checked_out");
+  assert.equal(
+    database.$client.prepare("SELECT housekeeping_status FROM units WHERE id = ?")
+      .get(unpaidStay.checkoutUnitId)?.housekeeping_status,
+    "dirty",
+  );
+  assert.equal(
+    (await request(`/reservations/${unpaidStay.checkoutReservationId}`)).status,
+    200,
+  );
+
+  console.log("Invoice, payment, checkout-balance enforcement, idempotency, lifecycle, reservation snapshot, and concurrency API tests passed.");
 } finally {
   if (server?.listening) {
     await new Promise<void>((resolveClose, reject) => {
