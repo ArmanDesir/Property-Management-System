@@ -17,6 +17,29 @@ npm run db:migrate
 npm run dev
 ```
 
+## Windows desktop installer
+
+The Windows installer packages the PMS as a standalone desktop application. It
+includes the application server and browser UI, so end users do not need to
+install Node.js or npm. Build it on a Windows x64 computer with Node.js 22.13+
+and npm 10+:
+
+```bash
+npm install
+npm run desktop:installer
+```
+
+The installer is written to `release/`. Users can run the generated setup
+executable and launch ZCSMST PMS from the Start menu or desktop shortcut. The
+app starts its local server automatically and stores its SQLite database in
+that Windows user's application data folder. Each installed PC has a separate
+database; this installer does not connect computers to a shared classroom
+database. Existing repository data is not bundled into the installer.
+
+Use `npm run desktop:dir` to create an unpacked Windows application directory
+for local packaging checks. The installer and unpacked output are generated
+artifacts and should not be committed.
+
 The client runs at <http://127.0.0.1:5173> and the API at <http://127.0.0.1:3000>. Both servers bind only to `127.0.0.1`; the Vite server proxies `/api` to the local API. The app does not call cloud services or external APIs. Loopback binding limits network exposure but is not complete security; continue protecting access to the laptop and its user account.
 
 The backend applies any pending migrations when it starts, including when launched by `npm run dev`. Back up and verify retained local data before starting after an upgrade. To start each development server separately, use `npm run dev:server` and `npm run dev:client` in separate terminals; the backend still applies pending migrations. `npm run dev` starts both together and stops the other process if either one exits.

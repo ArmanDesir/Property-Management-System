@@ -1,4 +1,5 @@
 import express from "express";
+import { resolve } from "node:path";
 import type { PmsDatabase } from "./db/connection.js";
 import { errorHandler } from "./middleware/http-errors.js";
 import { createHealthRouter } from "./routes/health.js";
@@ -25,6 +26,19 @@ export function createApp(database: PmsDatabase) {
 
   app.use(express.json({ limit: "100kb" }));
   app.use("/api/health", createHealthRouter(database));
+  const clientDirectory = process.env.PMS_CLIENT_DIST;
+  if (clientDirectory) {
+    app.use(express.static(clientDirectory, { index: false }));
+    app.get("*", (request, response, next) => {
+      if (request.path === "/api" || request.path.startsWith("/api/")) {
+        next();
+        return;
+      }
+      response.sendFile(resolve(clientDirectory, "index.html"), (error) => {
+        if (error) next(error);
+      });
+    });
+  }
   app.use(attachAuthenticatedStaff(database));
   app.use("/api/auth", createAuthRouter(database));
   app.use(requireAuthenticatedAndAuthorized());
