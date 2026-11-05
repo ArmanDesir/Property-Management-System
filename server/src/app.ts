@@ -16,12 +16,19 @@ import { createMaintenanceRouter } from "./routes/maintenance.js";
 import { createTeamTasksRouter } from "./routes/team-tasks.js";
 import { createRoomAvailabilityRouter } from "./routes/room-availability.js";
 import { createManagerRouter } from "./routes/manager.js";
+import { createClassroomRouter } from "./routes/classroom.js";
 import {
   attachAuthenticatedStaff,
   requireAuthenticatedAndAuthorized,
 } from "./services/auth.js";
 
-export function createApp(database: PmsDatabase) {
+export function createApp(
+  database: PmsDatabase,
+  classroomOptions: {
+    baselinePath?: string;
+    restoreBaseline?: () => Promise<void>;
+  } = {},
+) {
   const app = express();
 
   app.use(express.json({ limit: "100kb" }));
@@ -54,6 +61,7 @@ export function createApp(database: PmsDatabase) {
   app.use("/api/team-tasks", createTeamTasksRouter(database));
   app.use("/api/room-availability", createRoomAvailabilityRouter(database));
   app.use("/api/manager", createManagerRouter(database));
+  app.use("/api/classroom", createClassroomRouter(database, classroomOptions));
   app.use(errorHandler);
 
   return app;

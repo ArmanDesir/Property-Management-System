@@ -29,8 +29,11 @@ export function AuthPage({
   const [displayName, setDisplayName] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [recoveryPin, setRecoveryPin] = useState("");
+  const [recoveryMode, setRecoveryMode] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState("");
+  const isRecovery = mode === "login" && recoveryMode;
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -41,9 +44,15 @@ export function AuthPage({
         ? await apiRequest<{ user: StaffUser }>(
           "/auth/setup",
           "POST",
-          { displayName, username, password },
+          { displayName, username, password, recoveryPin },
           { "x-setup-token": setupToken ?? "" },
         )
+        : isRecovery
+          ? await apiRequest<{ user: StaffUser }>("/auth/recovery", "POST", {
+            username,
+            recoveryPin,
+            password,
+          })
         : await apiRequest<{ user: StaffUser }>("/auth/login", "POST", {
           username,
           password,
@@ -77,12 +86,18 @@ export function AuthPage({
         <span className="brand-mark" aria-hidden="true">L</span>
         <p className="eyebrow"><span /> PRIVATE LOCAL WORKSPACE</p>
         <h1 className="page-title" id="auth-title">
-          {mode === "setup" ? "Set up your administrator" : "Welcome back"}
+          {mode === "setup"
+            ? "Set up your administrator"
+            : isRecovery
+              ? "Recover administrator access"
+              : "Welcome back"}
         </h1>
         <p className="page-intro">
           {mode === "setup"
-            ? "Create the first account to secure this local installation."
-            : "Sign in with a staff account to continue."}
+            ? "Create the first account and an instructor-only recovery PIN."
+            : isRecovery
+              ? "Use the instructor PIN to set a new administrator password. PMS data will be kept."
+              : "Sign in with a staff account to continue."}
         </p>
         {(error || formError) && (
           <div className="error-banner" role="alert">{formError || error}</div>
@@ -114,23 +129,59 @@ export function AuthPage({
             <span className="field-label">Password</span>
             <input
               type="password"
-              autoComplete={mode === "setup" ? "new-password" : "current-password"}
+              autoComplete={mode === "setup" || isRecovery ? "new-password" : "current-password"}
               value={password}
               onChange={(event) => setPassword(event.target.value)}
-              minLength={mode === "setup" ? 12 : undefined}
               required
             />
             {mode === "setup" && (
-              <span className="field-hint">Use at least 12 characters. The password is stored as a bcrypt hash.</span>
+              <span className="field-hint">Choose a password you can remember. It is stored as a bcrypt hash.</span>
             )}
           </label>
+          {(mode === "setup" || isRecovery) && (
+            <label className="form-field">
+              <span className="field-label">Instructor recovery PIN</span>
+              <input
+                type="password"
+                inputMode="numeric"
+                pattern="[0-9]{6}"
+                minLength={6}
+                maxLength={6}
+                autoComplete="off"
+                value={recoveryPin}
+                onChange={(event) => setRecoveryPin(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                required
+              />
+              {mode === "setup" && (
+                <span className="field-hint">
+                  Choose a 6-digit PIN and keep it private. You will need it to recover the administrator password or reset the classroom baseline.
+                </span>
+              )}
+            </label>
+          )}
           <button className="button button-primary" type="submit" disabled={submitting}>
             {submitting
               ? "Please wait…"
               : mode === "setup"
                 ? "Create administrator"
-                : "Sign in"}
+                : isRecovery
+                  ? "Set new password"
+                  : "Sign in"}
           </button>
+          {mode === "login" && (
+            <button
+              className="button button-secondary auth-retry"
+              type="button"
+              onClick={() => {
+                setRecoveryMode((value) => !value);
+                setRecoveryPin("");
+                setPassword("");
+                setFormError("");
+              }}
+            >
+              {isRecovery ? "Back to sign in" : "Forgot administrator password?"}
+            </button>
+          )}
           {mode === "setup" && (
             <button className="button button-secondary auth-retry" type="button" onClick={onRetry}>
               Refresh setup token

@@ -1,4 +1,10 @@
 .staff-form { margin-bottom: 24px; padding: 24px; }
+.classroom-controls { display: grid; gap: 18px; margin-bottom: 24px; padding: 24px; }
+.classroom-controls h2 { margin: 4px 0 8px; font-size: 21px; }
+.classroom-pin-form, .classroom-baseline-actions { display: flex; align-items: end; flex-wrap: wrap; gap: 12px; }
+.classroom-pin-form .form-field { width: min(100%, 300px); }
+.classroom-baseline-actions { justify-content: space-between; border-top: 1px solid #e5e9e1; padding-top: 16px; }
+.classroom-baseline-actions > span { flex: 1 1 100%; color: #637067; font-size: 12px; }
 .staff-form-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
 .staff-form-heading .eyebrow { margin-bottom: 7px; }
 .staff-form-heading h2 { font-size: 21px; }

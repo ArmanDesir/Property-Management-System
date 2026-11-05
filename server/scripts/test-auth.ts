@@ -57,7 +57,7 @@ try {
     displayName: "Invalid",
     username: "x",
     role: "administrator",
-    password: "short",
+    password: "",
   });
   assert.equal(invalidUser.status, 400);
   const createdFrontDesk = await admin("/staff", "POST", {
@@ -165,6 +165,7 @@ try {
   const frontDeskLogin = await admin.login("front-desk", "synthetic-frontdesk-password");
   assert.equal(frontDeskLogin.status, 200);
   assert.equal(frontDeskLogin.data.user.role, "front_desk");
+  assert.equal((await admin("/classroom/status")).status, 403);
   const loginCookies = frontDeskLogin.response.headers.getSetCookie();
   assert.ok(loginCookies.some((cookie) =>
     cookie.startsWith("pms_session=") &&
@@ -346,6 +347,41 @@ try {
   assert.equal(
     database.$client.prepare("SELECT COUNT(*) AS count FROM guests").get()?.count,
     expiredSessionGuestCount,
+  );
+
+  const incorrectRecovery = await anonymous("/auth/recovery", "POST", {
+    username: "test-admin",
+    recoveryPin: "000000",
+    password: "admin123",
+  });
+  assert.equal(incorrectRecovery.status, 401);
+  const recovered = await anonymous("/auth/recovery", "POST", {
+    username: "test-admin",
+    recoveryPin: "842691",
+    password: "admin123",
+  });
+  assert.equal(recovered.status, 200);
+  assert.equal(recovered.data.user.role, "administrator");
+  assert.equal((await anonymous("/auth/me")).status, 200);
+  assert.equal((await anonymous.login("test-admin", "admin123")).status, 200);
+
+  for (let attempt = 0; attempt < 5; attempt++) {
+    assert.equal(
+      (await anonymous("/auth/recovery", "POST", {
+        username: "test-admin",
+        recoveryPin: "000000",
+        password: "admin123",
+      })).status,
+      401,
+    );
+  }
+  assert.equal(
+    (await anonymous("/auth/recovery", "POST", {
+      username: "test-admin",
+      recoveryPin: "842691",
+      password: "admin123",
+    })).status,
+    429,
   );
 
   console.log("Authentication and authorization integration tests passed.");

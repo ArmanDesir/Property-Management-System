@@ -19,7 +19,8 @@
     "test:maintenance": "tsx scripts/test-maintenance.ts",
     "test:billing": "tsx scripts/test-billing.ts",
     "test:reports": "tsx scripts/test-reports.ts",
-    "test:phase11": "tsx scripts/test-phase11.ts"
+    "test:phase11": "tsx scripts/test-phase11.ts",
+    "test:classroom": "tsx scripts/test-classroom.ts"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",

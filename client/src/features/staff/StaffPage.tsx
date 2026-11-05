@@ -47,17 +47,31 @@ export function StaffPage({
   const [editingId, setEditingId] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [busyId, setBusyId] = useState<number | null>(null);
+  const [recoveryPin, setRecoveryPin] = useState("");
+  const [currentRecoveryPin, setCurrentRecoveryPin] = useState("");
+  const [classroomStatus, setClassroomStatus] = useState<{
+    recoveryPinConfigured: boolean;
+    baselineSaved: boolean;
+    baselineSavedAt?: string;
+  } | null>(null);
+  const [classroomBusy, setClassroomBusy] = useState(false);
 
   const refresh = async () => {
     setLoading(true);
     setError("");
     try {
-      const [result, propertyResult] = await Promise.all([
+      const [result, propertyResult, classroomResult] = await Promise.all([
         apiRequest<{ staff: StaffUser[] }>("/staff"),
         apiRequest<{ properties: Array<{ id: number; name: string }> }>("/properties"),
+        apiRequest<{
+          recoveryPinConfigured: boolean;
+          baselineSaved: boolean;
+          baselineSavedAt?: string;
+        }>("/classroom/status"),
       ]);
       setStaff(result.staff);
       setProperties(propertyResult.properties);
+      setClassroomStatus(classroomResult);
     } catch (reason) {
       setError(errorMessage(reason));
     } finally {
@@ -128,6 +142,66 @@ export function StaffPage({
     }
   };
 
+  const saveRecoveryPin = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setClassroomBusy(true);
+    setError("");
+    try {
+      await apiRequest("/auth/recovery-pin", "PUT", {
+        ...(classroomStatus?.recoveryPinConfigured
+          ? { currentRecoveryPin }
+          : {}),
+        recoveryPin,
+      });
+      setRecoveryPin("");
+      setCurrentRecoveryPin("");
+      flash("Instructor recovery PIN saved.");
+      await refresh();
+    } catch (reason) {
+      setError(errorMessage(reason));
+    } finally {
+      setClassroomBusy(false);
+    }
+  };
+
+  const saveBaseline = async () => {
+    const pin = window.prompt("Enter the instructor recovery PIN to save or replace the classroom baseline.");
+    if (pin === null) return;
+    if (!window.confirm(
+      "Save the current PMS data as the classroom baseline? Include only permanent hotel, room, and account setup; anything present now will remain after reset.",
+    )) return;
+    setClassroomBusy(true);
+    setError("");
+    try {
+      await apiRequest("/classroom/baseline", "POST", { recoveryPin: pin });
+      flash("Classroom baseline saved.");
+      await refresh();
+    } catch (reason) {
+      setError(errorMessage(reason));
+    } finally {
+      setClassroomBusy(false);
+    }
+  };
+
+  const resetToBaseline = async () => {
+    if (!classroomStatus?.baselineSaved) return;
+    const pin = window.prompt("Enter the instructor recovery PIN to restore the saved baseline.");
+    if (pin === null) return;
+    if (!window.confirm(
+      "Restore the saved baseline now? All changes made after it was saved will be removed. The baseline administrator password will be restored.",
+    )) return;
+    setClassroomBusy(true);
+    setError("");
+    try {
+      await apiRequest("/classroom/reset", "POST", { recoveryPin: pin });
+      flash("Baseline restored. The app is restarting.");
+      window.setTimeout(() => window.location.reload(), 1500);
+    } catch (reason) {
+      setError(errorMessage(reason));
+      setClassroomBusy(false);
+    }
+  };
+
   if (loading && staff.length === 0) return <LoadingState label="Loading staff…" />;
   if (error && staff.length === 0) {
     return <ErrorState message={error} back={() => navigate("/")} />;
@@ -148,6 +222,80 @@ export function StaffPage({
       </div>
 
       {error && <ErrorState message={error} />}
+
+      <section className="state-panel classroom-controls">
+        <div>
+          <p className="eyebrow"><span /> INSTRUCTOR CONTROLS</p>
+          <h2>Classroom recovery and reset</h2>
+          <p className="field-hint">
+            Keep the six-digit recovery PIN private. Saving a baseline captures the current PMS data; reset restores it, including account passwords, and removes all later changes.
+          </p>
+        </div>
+        <form className="classroom-pin-form" onSubmit={saveRecoveryPin}>
+          {classroomStatus?.recoveryPinConfigured && (
+            <label className="form-field">
+              <span className="field-label">Current instructor PIN</span>
+              <input
+                type="password"
+                inputMode="numeric"
+                pattern="[0-9]{6}"
+                minLength={6}
+                maxLength={6}
+                autoComplete="current-password"
+                value={currentRecoveryPin}
+                onChange={(event) =>
+                  setCurrentRecoveryPin(event.target.value.replace(/\D/g, "").slice(0, 6))
+                }
+                required
+              />
+            </label>
+          )}
+          <label className="form-field">
+            <span className="field-label">
+              {classroomStatus?.recoveryPinConfigured ? "Change instructor PIN" : "Set instructor PIN"}
+            </span>
+            <input
+              type="password"
+              inputMode="numeric"
+              pattern="[0-9]{6}"
+              minLength={6}
+              maxLength={6}
+              autoComplete="new-password"
+              value={recoveryPin}
+              onChange={(event) => setRecoveryPin(event.target.value.replace(/\D/g, "").slice(0, 6))}
+              required
+            />
+          </label>
+          <button className="button button-secondary" type="submit" disabled={classroomBusy}>
+            Save PIN
+          </button>
+        </form>
+        <div className="classroom-baseline-actions">
+          <span>
+            {classroomStatus?.baselineSaved
+              ? `Baseline saved ${classroomStatus.baselineSavedAt
+                ? formatTimestamp(classroomStatus.baselineSavedAt)
+                : ""}`
+              : "No baseline saved yet."}
+          </span>
+          <button
+            className="button button-secondary"
+            type="button"
+            disabled={classroomBusy || !classroomStatus?.recoveryPinConfigured}
+            onClick={() => void saveBaseline()}
+          >
+            Save current baseline
+          </button>
+          <button
+            className="button button-primary"
+            type="button"
+            disabled={classroomBusy || !classroomStatus?.baselineSaved}
+            onClick={() => void resetToBaseline()}
+          >
+            {classroomBusy ? "Working…" : "Restore baseline"}
+          </button>
+        </div>
+      </section>
 
       {draft && (
         <form className="staff-form state-panel" onSubmit={submit}>
@@ -225,13 +373,12 @@ export function StaffPage({
                 type="password"
                 value={draft.password}
                 autoComplete="new-password"
-                minLength={12}
                 maxLength={72}
                 onChange={(event) => setDraft({ ...draft, password: event.target.value })}
                 required={editingId === null}
               />
               <span className="field-hint">
-                At least 12 characters. Passwords are stored only as bcrypt hashes.
+                Use a password the account holder can remember. Passwords are stored only as bcrypt hashes.
               </span>
             </label>
           </div>

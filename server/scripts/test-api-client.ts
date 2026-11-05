@@ -96,6 +96,7 @@ export async function createTestApiClient(
       displayName: "Synthetic Test Administrator",
       username: "test-admin",
       password: "synthetic-test-password-123",
+      recoveryPin: "842691",
     },
     {
       authenticated: false,

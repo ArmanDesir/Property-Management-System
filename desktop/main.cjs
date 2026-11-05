@@ -30,6 +30,7 @@ async function startPms() {
   const serverModule = path.join(applicationPath, "server", "dist", "embedded.js");
   const dataDirectory = path.join(app.getPath("userData"), "data");
   const databasePath = path.join(dataDirectory, "pms.db");
+  const baselinePath = path.join(dataDirectory, "classroom-baseline.db");
   const port = await findAvailablePort();
 
   await Promise.all([
@@ -39,11 +40,12 @@ async function startPms() {
   ]);
 
   process.env.PMS_DATABASE_PATH = databasePath;
+  process.env.PMS_BASELINE_PATH = baselinePath;
   process.env.PMS_CLIENT_DIST = clientDirectory;
   process.env.PMS_FRONTEND_ORIGIN = `http://127.0.0.1:${port}`;
 
   const { startEmbeddedServer } = await import(pathToFileURL(serverModule).href);
-  embeddedServer = await startEmbeddedServer(databasePath, port);
+  embeddedServer = await startEmbeddedServer(databasePath, port, baselinePath);
 
   const window = new BrowserWindow({
     width: 1440,

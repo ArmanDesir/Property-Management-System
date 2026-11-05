@@ -406,6 +406,20 @@ export const authSessions = sqliteTable(
   ],
 );
 
+export const classroomSecurity = sqliteTable(
+  "classroom_security",
+  {
+    id: integer("id").primaryKey(),
+    recoveryPinHash: text("recovery_pin_hash").notNull(),
+    failedAttempts: integer("failed_attempts").notNull().default(0),
+    lockedUntil: text("locked_until"),
+  },
+  (table) => [
+    check("classroom_security_singleton_check", sql`${table.id} = 1`),
+    check("classroom_security_failed_attempts_check", sql`${table.failedAttempts} >= 0`),
+  ],
+);
+
 export const maintenanceRequests = sqliteTable(
   "maintenance_requests",
   {

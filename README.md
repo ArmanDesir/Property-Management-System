@@ -64,7 +64,8 @@ The SQLite database is stored at `data/pms.db`, outside the frontend's public di
 | `npm run test:auth` | Exercise authentication, staff, and authorization against an isolated database |
 | `npm run test:maintenance` | Exercise maintenance workflows and role controls against an isolated database |
 | `npm run test:phase11` | Exercise property-manager scope, team-task workflow, room availability, and authorization against an isolated database |
-| `npm test` | Run migration, API regression, billing, reports, access-control, and maintenance integration tests |
+| `npm run test:classroom` | Exercise classroom baseline capture, reset, account restoration, and session invalidation in a temporary database |
+| `npm test` | Run migration, API regression, billing, reports, access-control, maintenance, and classroom integration tests |
 
 ## Project layout
 
@@ -79,7 +80,11 @@ The Drizzle schema is in `server/src/db/schema.ts`; generated migrations and jou
 
 ## API
 
-Phase 9 requires a local staff account to access PMS operations. On the first launch after migration, create the initial administrator in the setup screen; no default or demo account is created. Passwords must be at least 12 characters and are stored as bcrypt hashes. Sessions use random opaque tokens with an eight-hour lifetime, an HttpOnly session cookie, a readable SameSite CSRF cookie, and exact local Origin checks. The CSRF cookie uses `/` so the frontend can read it on application routes; unsafe API requests still require the matching header and session-bound hash. The API accepts unsafe requests only from `http://127.0.0.1:5173` by default. For a different local UI port, set `PMS_FRONTEND_ORIGIN` to that exact `http://127.0.0.1:<port>` origin for the server. Do not allow other origins: cookies are shared across ports on the same host. Staff changes and deactivation invalidate existing sessions. There is no password recovery workflow; keep the laptop account and independent database backups secure.
+PMS operations require a local staff account. On first launch, create the initial administrator and a private six-digit instructor recovery PIN; no default account is created. On an existing installation, sign in as administrator and set the PIN in **Staff → Classroom recovery and reset** before relying on recovery or reset. Changing an existing PIN requires the current PIN. Passwords may be any non-empty text up to 72 UTF-8 bytes and are stored as bcrypt hashes. Simple passwords are allowed, so use restricted operating-system accounts and keep the instructor PIN private. Administrator password recovery requires the PIN and does not delete PMS data. Five incorrect PIN attempts lock recovery for 15 minutes.
+
+In the desktop app, an administrator can use **Staff → Classroom recovery and reset** to save a baseline after permanent properties, rooms, and accounts are configured. Saving or replacing a baseline requires the instructor PIN. A reset also requires the PIN, restores that entire saved database state (including the baseline administrator password), and permanently removes every record and account created or changed afterward. The recovery PIN remains available, student sessions are invalidated, and the app restarts. Confirm the baseline contents carefully before saving; do not capture student activity in the baseline. This control is available only in the desktop app and is not a substitute for an independent backup. Reinstalling the application does not remove its data, which is stored in the Windows user's application data folder.
+
+Sessions use random opaque tokens with an eight-hour lifetime, an HttpOnly session cookie, a readable SameSite CSRF cookie, and exact local Origin checks. The CSRF cookie uses `/` so the frontend can read it on application routes; unsafe API requests still require the matching header and session-bound hash. The API accepts unsafe requests only from `http://127.0.0.1:5173` by default. For a different local UI port, set `PMS_FRONTEND_ORIGIN` to that exact `http://127.0.0.1:<port>` origin for the server. Do not allow other origins: cookies are shared across ports on the same host. Staff changes and deactivation invalidate existing sessions.
 
 Property managers are assigned to specific active properties by an administrator. Their dashboard, maintenance tools, team tasks, and room calendar are limited to those assignments. Team tasks support manager assignment/editing, staff progress and submission, and manager approval or return for correction. Room availability is read-only and uses actual stay timestamps and half-open reservation nights; starting a reservation continues through the existing reservation workflow.
 
@@ -105,6 +110,11 @@ This installation uses local HTTP, so its session cookie cannot use the `Secure`
 - `POST /api/auth/login` — sign in to a local staff account
 - `GET /api/auth/me` — current staff account
 - `POST /api/auth/logout` — end the current session
+- `POST /api/auth/recovery` — recover an administrator password with the instructor PIN
+- `PUT /api/auth/recovery-pin` — administrator-only instructor PIN configuration
+- `GET /api/classroom/status` — administrator-only recovery and baseline status
+- `POST /api/classroom/baseline` — save the current database as the reset baseline (desktop app only)
+- `POST /api/classroom/reset` — administrator-only baseline restore requiring the instructor PIN (desktop app only)
 - `GET /api/staff` — administrator-only staff listing
 - `POST /api/staff` — administrator-only staff creation
 - `PUT /api/staff/:staffId` — administrator-only staff edit (optional password replacement)

@@ -10,8 +10,11 @@ import {
   createInitialAdministrator,
   deleteCurrentSession,
   login,
+  recoverAdministratorPassword,
+  setAdministratorRecoveryPin,
   setSessionCookies,
   userFromRequest,
+  verifyAdministratorRecoveryPin,
 } from "../services/auth.js";
 import {
   enumValue,
@@ -71,6 +74,49 @@ export function createAuthRouter(database: PmsDatabase): Router {
   );
 
   router.post(
+    "/recovery",
+    asyncHandler(async (request, response) => {
+      assertLocalOrigin(request);
+      const input = parseRecovery(request.body);
+      const session = await recoverAdministratorPassword(
+        database,
+        input.username,
+        input.recoveryPin,
+        input.password,
+      );
+      setSessionCookies(response, session);
+      response.json({ user: session.user });
+    }),
+  );
+
+  router.put(
+    "/recovery-pin",
+    asyncHandler(async (request, response) => {
+      assertLocalOrigin(request);
+      if (request.auth?.role !== "administrator") {
+        throw new HttpError(403, "Only an administrator can configure instructor recovery.");
+      }
+      assertCsrf(request);
+      const body = requireObject(request.body);
+      rejectFields(body, new Set(["currentRecoveryPin", "recoveryPin"]));
+      const currentPinConfigured = database.$client.prepare(
+        "SELECT 1 FROM classroom_security WHERE id = 1",
+      ).get() !== undefined;
+      if (currentPinConfigured) {
+        verifyAdministratorRecoveryPin(
+          database,
+          recoveryPinValue(body.currentRecoveryPin),
+        );
+      } else if (body.currentRecoveryPin !== undefined) {
+        throw new HttpError(400, "No existing instructor recovery PIN is configured.");
+      }
+      const recoveryPin = recoveryPinValue(body.recoveryPin);
+      await setAdministratorRecoveryPin(database, recoveryPin);
+      response.status(204).end();
+    }),
+  );
+
+  router.post(
     "/login",
     asyncHandler(async (request, response) => {
       assertLocalOrigin(request);
@@ -110,10 +156,21 @@ export function createAuthRouter(database: PmsDatabase): Router {
 
 function parseInitialAdministrator(value: unknown) {
   const body = requireObject(value);
-  rejectFields(body, new Set(["displayName", "username", "password"]));
+  rejectFields(body, new Set(["displayName", "username", "password", "recoveryPin"]));
   return {
     displayName: requiredText(body.displayName, "Display name", 100),
     username: usernameValue(body.username),
+    password: passwordValue(body.password),
+    recoveryPin: recoveryPinValue(body.recoveryPin),
+  };
+}
+
+function parseRecovery(value: unknown) {
+  const body = requireObject(value);
+  rejectFields(body, new Set(["username", "recoveryPin", "password"]));
+  return {
+    username: usernameValue(body.username),
+    recoveryPin: recoveryPinValue(body.recoveryPin),
     password: passwordValue(body.password),
   };
 }
@@ -144,10 +201,17 @@ export function usernameValue(value: unknown): string {
 export function passwordValue(value: unknown): string {
   if (
     typeof value !== "string" ||
-    value.length < 12 ||
+    value.length < 1 ||
     Buffer.byteLength(value, "utf8") > 72
   ) {
-    throw new HttpError(400, "Password must be at least 12 characters and at most 72 UTF-8 bytes.");
+    throw new HttpError(400, "Password is required and must be at most 72 UTF-8 bytes.");
+  }
+  return value;
+}
+
+export function recoveryPinValue(value: unknown): string {
+  if (typeof value !== "string" || !/^\d{6}$/.test(value)) {
+    throw new HttpError(400, "Instructor recovery PIN must contain exactly 6 digits.");
   }
   return value;
 }

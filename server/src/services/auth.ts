@@ -39,9 +39,10 @@ const failedLogins = new Map<string, { count: number; resetAt: number }>();
 
 export async function createInitialAdministrator(
   database: PmsDatabase,
-  input: { displayName: string; username: string; password: string },
+  input: { displayName: string; username: string; password: string; recoveryPin: string },
 ) {
   const passwordHash = await bcrypt.hash(input.password, 12);
+  const recoveryPinHash = await bcrypt.hash(input.recoveryPin, 12);
   const client = database.$client;
   let staffId: number;
   client.exec("BEGIN IMMEDIATE");
@@ -54,6 +55,10 @@ export async function createInitialAdministrator(
       INSERT INTO staff_accounts (display_name, username, password_hash, role)
       VALUES (?, ?, ?, 'administrator')
     `).run(input.displayName, input.username, passwordHash);
+    client.prepare(`
+      INSERT INTO classroom_security (id, recovery_pin_hash)
+      VALUES (1, ?)
+    `).run(recoveryPinHash);
     client.exec("COMMIT");
     staffId = Number(result.lastInsertRowid);
   } catch (error) {
@@ -61,6 +66,88 @@ export async function createInitialAdministrator(
     throw error;
   }
   return createSession(database, staffId);
+}
+
+export async function setAdministratorRecoveryPin(
+  database: PmsDatabase,
+  recoveryPin: string,
+): Promise<void> {
+  const recoveryPinHash = await bcrypt.hash(recoveryPin, 12);
+  database.$client.prepare(`
+    INSERT INTO classroom_security (id, recovery_pin_hash, failed_attempts, locked_until)
+    VALUES (1, ?, 0, NULL)
+    ON CONFLICT(id) DO UPDATE SET
+      recovery_pin_hash = excluded.recovery_pin_hash,
+      failed_attempts = 0,
+      locked_until = NULL
+  `).run(recoveryPinHash);
+}
+
+export async function recoverAdministratorPassword(
+  database: PmsDatabase,
+  username: string,
+  recoveryPin: string,
+  newPassword: string,
+): Promise<{ user: StaffUser; token: string; csrfToken: string; expiresAt: string }> {
+  verifyAdministratorRecoveryPin(database, recoveryPin);
+  const passwordHash = await bcrypt.hash(newPassword, 12);
+  const result = database.$client.prepare(`
+    UPDATE staff_accounts SET password_hash = ?, updated_at = ?
+    WHERE username = ? AND role = 'administrator' AND is_active = 1
+  `).run(passwordHash, new Date().toISOString(), username);
+  if (result.changes !== 1) {
+    throw new HttpError(401, "Instructor recovery details are incorrect.");
+  }
+  const staff = database.$client.prepare(`
+    SELECT id FROM staff_accounts
+    WHERE username = ? AND role = 'administrator' AND is_active = 1
+  `).get(username);
+  if (!staff) throw new HttpError(401, "Instructor recovery details are incorrect.");
+  const staffId = integerValue(staff.id);
+  database.$client.prepare("DELETE FROM auth_sessions WHERE staff_id = ?").run(staffId);
+  return createSession(database, staffId);
+}
+
+export function verifyAdministratorRecoveryPin(
+  database: PmsDatabase,
+  recoveryPin: string,
+): void {
+  const client = database.$client;
+  const now = new Date();
+  const nowIso = now.toISOString();
+  client.exec("BEGIN IMMEDIATE");
+  let failure: HttpError | null = null;
+  try {
+    const current = client.prepare(`
+      SELECT recovery_pin_hash, failed_attempts, locked_until
+      FROM classroom_security WHERE id = 1
+    `).get();
+    if (!current || typeof current.recovery_pin_hash !== "string") {
+      failure = new HttpError(409, "Instructor recovery has not been configured on this installation.");
+    } else if (typeof current.locked_until === "string" && current.locked_until > nowIso) {
+      failure = new HttpError(429, "Recovery is temporarily locked. Wait 15 minutes and try again.");
+    } else if (!bcrypt.compareSync(recoveryPin, current.recovery_pin_hash)) {
+      const attempts = current.locked_until && current.locked_until <= nowIso
+        ? 1
+        : integerValue(current.failed_attempts) + 1;
+      const lockedUntil = attempts >= 5
+        ? new Date(now.getTime() + 15 * 60 * 1000).toISOString()
+        : null;
+      client.prepare(`
+        UPDATE classroom_security SET failed_attempts = ?, locked_until = ? WHERE id = 1
+      `).run(attempts, lockedUntil);
+      failure = new HttpError(401, "Instructor recovery details are incorrect.");
+    } else {
+      client.prepare(`
+        UPDATE classroom_security SET failed_attempts = 0, locked_until = NULL WHERE id = 1
+      `).run();
+    }
+    client.exec("COMMIT");
+  } catch (error) {
+    client.exec("ROLLBACK");
+    throw error;
+  }
+  if (failure) throw failure;
 }
 
 export async function login(
@@ -433,11 +520,15 @@ export function hasPermission(role: StaffRole, method: string, path: string): bo
   const isTaskStatus = method === "PATCH" && /^\/api\/team-tasks\/[^/]+\/status$/.test(path);
   const isRoomCalendar = isGet && /^\/api\/room-availability(?:\/properties|\/\d+)$/.test(path);
   const isManagerDashboard = isGet && path === "/api/manager/dashboard";
+  const isClassroomControl =
+    (isGet && path === "/api/classroom/status") ||
+    (method === "POST" && /^\/api\/classroom\/(?:baseline|reset)$/.test(path));
   const supportedOperation = isPropertiesRead || isPropertyWrite || isGuest ||
     isReservation || isFrontDesk || isHousekeepingRead || isHousekeepingWrite ||
     isInvoiceRead || isInvoiceWrite || isReport || isStaff || isMaintenanceRead ||
     isMaintenanceCreate || isMaintenanceAdminWrite || isTaskRead || isTaskCreate ||
-    isTaskEdit || isTaskStatus || isRoomCalendar || isManagerDashboard;
+    isTaskEdit || isTaskStatus || isRoomCalendar || isManagerDashboard ||
+    isClassroomControl;
   if (!supportedOperation) return false;
 
   switch (role) {
