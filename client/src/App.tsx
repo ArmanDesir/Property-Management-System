@@ -684,7 +684,9 @@ function canAccessRoute(route: Route, role: StaffUser["role"]): boolean {
   if (route.name === "dashboard" || route.name === "not-found") return true;
   if (role === "administrator") return true;
   if (route.name === "tasks") return true;
-  if (role === "property_manager") return route.name === "room-availability";
+  if (role === "property_manager") {
+    return route.name === "room-availability" || route.name === "maintenance";
+  }
   if (role === "front_desk") {
     return [
       "front-desk",
@@ -717,7 +719,9 @@ function canAccessDashboardTile(
   title: string,
 ): boolean {
   if (role === "administrator") return true;
-  if (role === "property_manager") return title === "Team Tasks" || title === "Room Availability";
+  if (role === "property_manager") {
+    return ["Team Tasks", "Room Availability", "Maintenance"].includes(title);
+  }
   if (role === "front_desk") {
     return ["Front Desk", "Reservations", "Guests", "Billing", "Maintenance", "Team Tasks", "Room Availability"].includes(title);
   }
