@@ -67,6 +67,8 @@
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": true,
+      "include": "desktop/installer.nsh",
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true
     }
