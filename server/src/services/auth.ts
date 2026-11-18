@@ -537,12 +537,13 @@ export function hasPermission(role: StaffRole, method: string, path: string): bo
     case "property_manager":
       return isTaskRead || isTaskCreate || isTaskEdit || isTaskStatus ||
         isRoomCalendar || isManagerDashboard || isMaintenanceRead ||
-        isMaintenanceCreate || isMaintenanceAdminWrite;
+        isMaintenanceCreate || isMaintenanceAdminWrite ||
+        isHousekeepingRead || isHousekeepingWrite;
     case "front_desk":
       return isPropertiesRead || isGuest || isReservation || isFrontDesk ||
         isInvoiceRead || isMaintenanceRead || isMaintenanceCreate ||
         (isTaskRead && !path.endsWith("/dashboard") && !path.endsWith("/options")) ||
-        isTaskStatus || isRoomCalendar;
+        isTaskStatus || isRoomCalendar || isHousekeepingRead || isHousekeepingWrite;
     case "housekeeping":
       return isHousekeepingRead || isHousekeepingWrite ||
         isMaintenanceRead || isMaintenanceCreate ||

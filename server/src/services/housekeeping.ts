@@ -1,5 +1,6 @@
 import type { PmsDatabase } from "../db/connection.js";
 import { HttpError } from "../middleware/http-errors.js";
+import type { AuthenticatedStaff } from "./auth.js";
 import { withImmediateTransaction } from "./reservations.js";
 
 export type HousekeepingStatus = "dirty" | "cleaning" | "clean";
@@ -64,7 +65,15 @@ export function listHousekeeping(
   database: PmsDatabase,
   propertyId: number | null,
   status: HousekeepingStatus | "all",
+  allowedPropertyIds?: number[],
 ): HousekeepingOverview {
+  if (
+    propertyId !== null &&
+    allowedPropertyIds !== undefined &&
+    !allowedPropertyIds.includes(propertyId)
+  ) {
+    throw new HttpError(404, "Active property not found.");
+  }
   if (propertyId !== null) {
     const property = database.$client
       .prepare("SELECT id FROM properties WHERE id = ? AND status = 'active'")
@@ -76,8 +85,16 @@ export function listHousekeeping(
     "u.archived_at IS NULL",
     "p.status = 'active'",
     ...(propertyId === null ? [] : ["u.property_id = ?"]),
+    ...(allowedPropertyIds === undefined
+      ? []
+      : allowedPropertyIds.length
+        ? [`u.property_id IN (${allowedPropertyIds.map(() => "?").join(", ")})`]
+        : ["0 = 1"]),
   ];
-  const parameters = propertyId === null ? [] : [propertyId];
+  const parameters = [
+    ...(propertyId === null ? [] : [propertyId]),
+    ...(allowedPropertyIds ?? []),
+  ];
   const condition = where.join(" AND ");
   const summaryRow = database.$client.prepare(`
     SELECT
@@ -95,9 +112,15 @@ export function listHousekeeping(
     WHERE ${condition}${statusCondition}
     ORDER BY p.name COLLATE NOCASE, u.name COLLATE NOCASE, u.id
   `).all(...parameters, ...(status === "all" ? [] : [status]));
+  const propertyScope = allowedPropertyIds === undefined
+    ? ""
+    : allowedPropertyIds.length
+      ? ` AND id IN (${allowedPropertyIds.map(() => "?").join(", ")})`
+      : " AND 0 = 1";
   const properties = database.$client.prepare(`
-    SELECT id, name FROM properties WHERE status = 'active' ORDER BY name COLLATE NOCASE, id
-  `).all().map((row) => ({
+    SELECT id, name FROM properties WHERE status = 'active'${propertyScope}
+    ORDER BY name COLLATE NOCASE, id
+  `).all(...(allowedPropertyIds ?? [])).map((row) => ({
     id: integerValue(row.id),
     name: textValue(row.name),
   }));
@@ -118,11 +141,12 @@ export function updateHousekeepingStatus(
   database: PmsDatabase,
   unitId: number,
   status: HousekeepingStatus,
+  actor: AuthenticatedStaff,
   now = new Date(),
 ): HousekeepingUnit {
   return withImmediateTransaction(database, (client) => {
     const existing = client.prepare(`
-      SELECT id, housekeeping_status, archived_at, status
+      SELECT id, property_id, housekeeping_status, archived_at, status
       FROM units
       WHERE id = ?
     `).get(unitId);
@@ -130,7 +154,26 @@ export function updateHousekeepingStatus(
       throw new HttpError(404, "Active unit not found.");
     }
 
+    if (actor.role === "property_manager") {
+      const assigned = client.prepare(`
+        SELECT 1 FROM property_manager_properties
+        WHERE staff_id = ? AND property_id = ?
+      `).get(actor.id, existing.property_id);
+      if (!assigned) throw new HttpError(404, "Active unit not found.");
+    }
+
     const currentStatus = housekeepingStatusValue(existing.housekeeping_status);
+    const isCleaningRequester =
+      actor.role === "property_manager" || actor.role === "front_desk";
+    if (isCleaningRequester && status !== "dirty") {
+      throw new HttpError(403, "Only housekeeping staff can start or complete cleaning.");
+    }
+    if (isCleaningRequester && existing.status !== "active") {
+      throw new HttpError(409, "Cleaning cannot be requested for an inactive or maintenance unit.");
+    }
+    if (isCleaningRequester && currentStatus === "cleaning" && status === "dirty") {
+      throw new HttpError(409, "Cleaning is already in progress for this unit.");
+    }
     if (status === currentStatus) return getHousekeepingUnit(database, unitId);
 
     const allowedTransitions: Record<HousekeepingStatus, readonly HousekeepingStatus[]> = {

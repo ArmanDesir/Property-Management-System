@@ -45,7 +45,6 @@ h2 { margin: 0; font: 600 24px "Segoe UI", Arial, sans-serif; letter-spacing: -1
 .area-card-pending { opacity: .68; }
 .card-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
 .area-icon { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 8px; background: #edf2eb; color: #55735d; font-size: 17px; }
-.area-number { color: #aeb7ac; font: 500 10px "Segoe UI", Arial, sans-serif; }
 h3 { margin: 0 0 7px; font: 700 13px "Segoe UI", Arial, sans-serif; }
 .area-card p { max-width: 160px; margin: 0; color: #879087; font-size: 10px; line-height: 1.7; }
 .area-card-title { margin-bottom: 7px; font: 700 13px "Segoe UI", Arial, sans-serif; }

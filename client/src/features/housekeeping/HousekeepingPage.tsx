@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { apiRequest } from "../../lib/api";
 import { LoadingState, ErrorState } from "../properties/PropertiesPages";
 import { formatUnitType, type UnitType } from "../properties/api";
+import type { StaffUser } from "../auth/AuthPage";
 import "./Housekeeping.css";
 
 type HousekeepingStatus = "dirty" | "cleaning" | "clean";
@@ -55,10 +56,13 @@ const actionLabel: Record<HousekeepingStatus, string> = {
 export function HousekeepingPage({
   navigate,
   flash,
+  role,
 }: {
   navigate: (path: string) => void;
   flash: (message: string) => void;
+  role: StaffUser["role"];
 }) {
+  const canOnlyRequestCleaning = role === "front_desk" || role === "property_manager";
   const [propertyId, setPropertyId] = useState("");
   const [status, setStatus] = useState<StatusFilter>("all");
   const [overview, setOverview] = useState<HousekeepingOverview | null>(null);
@@ -128,7 +132,9 @@ export function HousekeepingPage({
           <p className="eyebrow"><span /> UNIT CLEANING STATUS</p>
           <h1 className="page-title">Housekeeping</h1>
           <p className="page-intro">
-            Track cleaning progress without changing unit availability or reservations.
+            {canOnlyRequestCleaning
+              ? "Request cleaning for a room; housekeeping can begin once it is vacant."
+              : "Track cleaning progress without changing unit availability or reservations."}
           </p>
         </div>
         <div className="housekeeping-filters">
@@ -197,7 +203,7 @@ export function HousekeepingPage({
           </div>
           {overview.units.map((unit) => {
             const occupied = unit.activeStay !== null;
-            const blocked = occupied &&
+            const blocked = !canOnlyRequestCleaning && occupied &&
               (unit.housekeepingStatus === "dirty" || unit.housekeepingStatus === "cleaning");
             return (
               <article className="housekeeping-row" key={unit.id}>
@@ -225,14 +231,35 @@ export function HousekeepingPage({
                   {unit.lastCleanedAt ? formatTimestamp(unit.lastCleanedAt) : "Not recorded"}
                 </div>
                 <div className="housekeeping-actions">
-                  <button
-                    className="button button-secondary"
-                    disabled={busyUnitId !== null || blocked}
-                    title={blocked ? "An occupied unit cannot be cleaned." : undefined}
-                    onClick={() => void changeStatus(unit)}
-                  >
-                    {busyUnitId === unit.id ? "Saving…" : actionLabel[unit.housekeepingStatus]}
-                  </button>
+                  {canOnlyRequestCleaning ? (
+                    unit.housekeepingStatus === "clean" ? (
+                      <button
+                        className="button button-secondary"
+                        disabled={busyUnitId !== null || unit.operationalStatus !== "active"}
+                        title={unit.operationalStatus !== "active"
+                          ? "Cleaning cannot be requested for an inactive or maintenance unit."
+                          : undefined}
+                        onClick={() => void changeStatus(unit)}
+                      >
+                        {busyUnitId === unit.id ? "Saving…" : "Request cleaning"}
+                      </button>
+                    ) : (
+                      <span>
+                        {unit.housekeepingStatus === "dirty"
+                          ? "Cleaning requested"
+                          : "Cleaning underway"}
+                      </span>
+                    )
+                  ) : (
+                    <button
+                      className="button button-secondary"
+                      disabled={busyUnitId !== null || blocked}
+                      title={blocked ? "An occupied unit cannot be cleaned." : undefined}
+                      onClick={() => void changeStatus(unit)}
+                    >
+                      {busyUnitId === unit.id ? "Saving…" : actionLabel[unit.housekeepingStatus]}
+                    </button>
+                  )}
                 </div>
                 {unit.activeStay && (
                   <div className="housekeeping-stay">
@@ -242,6 +269,9 @@ export function HousekeepingPage({
                       {" – "}
                       {formatDate(unit.activeStay.checkOut)}
                     </span>
+                    {unit.housekeepingStatus === "dirty" && (
+                      <span>Cleaning can start after checkout.</span>
+                    )}
                   </div>
                 )}
               </article>

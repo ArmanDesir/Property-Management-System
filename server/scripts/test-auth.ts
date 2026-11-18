@@ -105,6 +105,38 @@ try {
     baseNightlyRate: 100,
   });
   assert.equal(unitResult.status, 201);
+  assert.equal(
+    (await admin(`/housekeeping/units/${unitResult.data.unit.id}/status`, "PATCH", {
+      status: "cleaning",
+    })).status,
+    200,
+  );
+  assert.equal(
+    (await admin(`/housekeeping/units/${unitResult.data.unit.id}/status`, "PATCH", {
+      status: "clean",
+    })).status,
+    200,
+  );
+  const outsideProperty = await admin("/properties", "POST", {
+    name: "Synthetic Outside Property",
+    propertyType: "hotel",
+    defaultCurrency: "USD",
+  });
+  assert.equal(outsideProperty.status, 201);
+  const outsideUnit = await admin(`/properties/${outsideProperty.data.property.id}/units`, "POST", {
+    name: "B-01",
+    capacity: 2,
+    baseNightlyRate: 100,
+  });
+  assert.equal(outsideUnit.status, 201);
+  const createdManager = await admin("/staff", "POST", {
+    displayName: "Synthetic Property Manager",
+    username: "property-manager",
+    role: "property_manager",
+    password: "synthetic-manager-password",
+    propertyIds: [propertyId],
+  });
+  assert.equal(createdManager.status, 201);
   const guestResult = await admin("/guests", "POST", {
     firstName: "Synthetic",
     lastName: "Access Guest",
@@ -114,11 +146,17 @@ try {
   const reservationResult = await admin("/reservations", "POST", {
     guestId: guestResult.data.guest.id,
     unitId: unitResult.data.unit.id,
-    checkIn: "2032-01-01",
-    checkOut: "2032-01-03",
+    checkIn: new Date().toISOString().slice(0, 10),
+    checkOut: new Date(Date.now() + 86400000).toISOString().slice(0, 10),
     numberOfGuests: 1,
   });
   assert.equal(reservationResult.status, 201);
+  assert.equal(
+    (await admin(`/reservations/${reservationResult.data.reservation.id}/status`, "PATCH", {
+      status: "confirmed",
+    })).status,
+    200,
+  );
   const invoiceResult = await admin("/invoices", "POST", {
     reservationId: reservationResult.data.reservation.id,
     issueDate: "2031-12-01",
@@ -165,6 +203,27 @@ try {
   const frontDeskLogin = await admin.login("front-desk", "synthetic-frontdesk-password");
   assert.equal(frontDeskLogin.status, 200);
   assert.equal(frontDeskLogin.data.user.role, "front_desk");
+  assert.equal((await admin("/housekeeping")).status, 200);
+  assert.equal(
+    (await admin(`/reservations/${reservationResult.data.reservation.id}/check-in`, "POST")).status,
+    200,
+  );
+  assert.equal(
+    (await admin(`/housekeeping/units/${unitResult.data.unit.id}/status`, "PATCH", {
+      status: "dirty",
+    })).status,
+    200,
+  );
+  assert.equal(
+    (await admin(`/housekeeping/units/${unitResult.data.unit.id}/status`, "PATCH", {
+      status: "cleaning",
+    })).status,
+    403,
+  );
+  assert.equal(
+    (await admin(`/reservations/${reservationResult.data.reservation.id}/check-out`, "POST")).status,
+    200,
+  );
   assert.equal((await admin("/classroom/status")).status, 403);
   const loginCookies = frontDeskLogin.response.headers.getSetCookie();
   assert.ok(loginCookies.some((cookie) =>
@@ -221,7 +280,7 @@ try {
   assert.equal((await admin("/invoices")).status, 200);
   assert.equal((await admin("/properties", "POST", { name: "Denied" })).status, 403);
   assert.equal((await admin("/invoices", "POST", {})).status, 403);
-  assert.equal((await admin("/housekeeping")).status, 403);
+  assert.equal((await admin("/housekeeping")).status, 200);
   assert.equal((await admin("/reports/summary?from=2030-01-01&to=2030-01-01")).status, 403);
   assert.equal((await admin("/staff")).status, 403);
 
@@ -239,6 +298,12 @@ try {
     })).status,
     200,
   );
+  assert.equal(
+    (await admin(`/housekeeping/units/${unitResult.data.unit.id}/status`, "PATCH", {
+      status: "clean",
+    })).status,
+    200,
+  );
   assert.equal((await admin("/guests")).status, 403);
   assert.equal((await admin("/properties")).status, 403);
   assert.equal((await admin("/staff")).status, 403);
@@ -249,6 +314,37 @@ try {
       email: "role@example.test",
     })).status,
     403,
+  );
+  const manager = await createTestApiClient(baseUrl, false);
+  assert.equal(
+    (await manager.login("property-manager", "synthetic-manager-password")).status,
+    200,
+  );
+  const managerHousekeeping = await manager("/housekeeping");
+  assert.equal(managerHousekeeping.status, 200);
+  assert.equal(managerHousekeeping.data.housekeeping.units.length, 1);
+  assert.equal(managerHousekeeping.data.housekeeping.units[0].propertyId, propertyId);
+  assert.equal(
+    (await manager(`/housekeeping/units/${unitResult.data.unit.id}/status`, "PATCH", {
+      status: "dirty",
+    })).status,
+    200,
+  );
+  assert.equal(
+    (await manager(`/housekeeping/units/${unitResult.data.unit.id}/status`, "PATCH", {
+      status: "cleaning",
+    })).status,
+    403,
+  );
+  assert.equal(
+    (await manager(`/housekeeping/units/${outsideUnit.data.unit.id}/status`, "PATCH", {
+      status: "dirty",
+    })).status,
+    404,
+  );
+  assert.equal(
+    (await manager(`/housekeeping?propertyId=${outsideProperty.data.property.id}`)).status,
+    404,
   );
 
   const accountingLogin = await admin.login(
@@ -308,6 +404,8 @@ try {
 
   assert.equal(hasPermission("administrator", "GET", "/api/unknown"), false);
   assert.equal(hasPermission("housekeeping", "PATCH", "/api/guests/1"), false);
+  assert.equal(hasPermission("front_desk", "GET", "/api/housekeeping"), true);
+  assert.equal(hasPermission("property_manager", "PATCH", "/api/housekeeping/units/1/status"), true);
   assert.equal(hasPermission("accounting", "GET", "/api/invoices"), true);
   assert.equal(hasPermission("front_desk", "POST", "/api/invoices"), false);
 

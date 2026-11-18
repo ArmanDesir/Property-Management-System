@@ -10,6 +10,7 @@ const styles = readFileSync(resolve(clientRoot, "src/App.css"), "utf8");
 assert.match(app, /aria-controls="primary-navigation"/);
 assert.match(app, /aria-expanded=\{navigationOpen\}/);
 assert.match(app, /id="primary-navigation"/);
+assert.doesNotMatch(app, /area-number/);
 
 for (const path of [
   "/",

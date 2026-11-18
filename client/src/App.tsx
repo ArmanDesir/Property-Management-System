@@ -276,7 +276,8 @@ function App() {
               <NavLink path="/reservations" label="Reservations" active={isReservationsRoute} navigate={navigate} />
             </>
           )}
-          {(role === "administrator" || role === "housekeeping") && (
+          {(role === "administrator" || role === "housekeeping" ||
+            role === "front_desk" || role === "property_manager") && (
             <NavLink path="/housekeeping" label="Housekeeping" active={route.name === "housekeeping"} navigate={navigate} />
           )}
           {role === "administrator" && (
@@ -372,7 +373,7 @@ function App() {
         />
       )}
       {route.name === "front-desk" && <FrontDeskPage {...pageProps} />}
-      {route.name === "housekeeping" && <HousekeepingPage {...pageProps} />}
+      {route.name === "housekeeping" && <HousekeepingPage role={role} {...pageProps} />}
       {route.name === "billing" && (
         <BillingPage {...pageProps} readOnly={role === "front_desk"} />
       )}
@@ -517,7 +518,6 @@ function Dashboard({
           >
             <span className="card-top">
               <span className="area-icon">⌂</span>
-              <span className="area-number">01</span>
             </span>
             <span className="area-card-title">Properties</span>
             <span className="area-card-description">
@@ -528,36 +528,32 @@ function Dashboard({
             </span>
           </button>}
           {[
-            ["02", "Front Desk", "Manage today’s arrivals, departures, and in-house stays.", "↔"],
-            ["03", "Reservations", "Manage dates, availability, and stays.", "▦"],
-            ["04", "Guests", "Manage guest profiles and contact details.", "◎"],
+            ["Front Desk", "Manage today’s arrivals, departures, and in-house stays.", "↔"],
+            ["Reservations", "Manage dates, availability, and stays.", "▦"],
+            ["Guests", "Manage guest profiles and contact details.", "◎"],
             [
-              "05",
               "Billing",
               "Create reservation invoices and track manually recorded payments.",
               "↗",
             ],
             [
-              "06",
               "Housekeeping",
               "Track unit cleaning and maintenance availability.",
               "✳",
             ],
             [
-              "07",
               "Reports",
               "Review reservations, occupancy, housekeeping, and billing trends.",
               "▤",
             ],
             [
-              "08",
               "Maintenance",
               "Track property repairs, priorities, assignments, and progress.",
               "⚒",
             ],
-            ["09", "Team Tasks", "Assign and review staff work.", "✓"],
-            ["10", "Room Availability", "Review hotel room availability by date.", "▦"],
-          ].filter(([, title]) => canAccessDashboardTile(role, title)).map(([number, title, description, icon]) =>
+            ["Team Tasks", "Assign and review staff work.", "✓"],
+            ["Room Availability", "Review hotel room availability by date.", "▦"],
+          ].filter(([title]) => canAccessDashboardTile(role, title)).map(([title, description, icon]) =>
             title === "Guests" || title === "Reservations" || title === "Front Desk" || title === "Housekeeping" || title === "Billing" || title === "Reports" || title === "Maintenance" || title === "Team Tasks" || title === "Room Availability" ? (
               <button
                 className="area-card area-card-button"
@@ -584,7 +580,6 @@ function Dashboard({
               >
                 <span className="card-top">
                   <span className="area-icon">{icon}</span>
-                  <span className="area-number">{number}</span>
                 </span>
                 <span className="area-card-title">{title}</span>
                 <span className="area-card-description">{description}</span>
@@ -600,7 +595,6 @@ function Dashboard({
               >
                 <span className="card-top">
                   <span className="area-icon">{icon}</span>
-                  <span className="area-number">{number}</span>
                 </span>
                 <span className="area-card-title">{title}</span>
                 <span className="area-card-description">{description}</span>
@@ -685,7 +679,9 @@ function canAccessRoute(route: Route, role: StaffUser["role"]): boolean {
   if (role === "administrator") return true;
   if (route.name === "tasks") return true;
   if (role === "property_manager") {
-    return route.name === "room-availability" || route.name === "maintenance";
+    return route.name === "room-availability" ||
+      route.name === "maintenance" ||
+      route.name === "housekeeping";
   }
   if (role === "front_desk") {
     return [
@@ -702,6 +698,7 @@ function canAccessRoute(route: Route, role: StaffUser["role"]): boolean {
       "invoice-details",
       "maintenance",
       "room-availability",
+      "housekeeping",
     ].includes(route.name);
   }
   if (role === "housekeeping") return route.name === "housekeeping" || route.name === "maintenance";
@@ -720,10 +717,10 @@ function canAccessDashboardTile(
 ): boolean {
   if (role === "administrator") return true;
   if (role === "property_manager") {
-    return ["Team Tasks", "Room Availability", "Maintenance"].includes(title);
+    return ["Team Tasks", "Room Availability", "Maintenance", "Housekeeping"].includes(title);
   }
   if (role === "front_desk") {
-    return ["Front Desk", "Reservations", "Guests", "Billing", "Maintenance", "Team Tasks", "Room Availability"].includes(title);
+    return ["Front Desk", "Reservations", "Guests", "Billing", "Maintenance", "Team Tasks", "Room Availability", "Housekeeping"].includes(title);
   }
   if (role === "housekeeping") return title === "Housekeeping" || title === "Maintenance" || title === "Team Tasks";
   return title === "Billing" || title === "Reports" || title === "Team Tasks";
