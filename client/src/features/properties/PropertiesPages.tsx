@@ -11,6 +11,7 @@ import {
   type UnitStatus,
   type UnitType,
 } from "./api";
+import { generateUnitNames, maximumBulkUnits } from "./unit-names";
 
 type PageProps = {
   navigate: (path: string) => void;
@@ -430,6 +431,7 @@ export function UnitFormPage({
   flash,
 }: PageProps & { propertyId: number; unitId?: number }) {
   const [property, setProperty] = useState<Property | null>(null);
+  const [existingUnits, setExistingUnits] = useState<Unit[]>([]);
   const [values, setValues] = useState<UnitInput>({
     name: "",
     unitType: "room",
@@ -440,6 +442,8 @@ export function UnitFormPage({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [bulkMode, setBulkMode] = useState(false);
+  const [batchCount, setBatchCount] = useState(30);
 
   useEffect(() => {
     let active = true;
@@ -447,10 +451,14 @@ export function UnitFormPage({
     const unitRequest = unitId === undefined
       ? Promise.resolve(undefined)
       : apiRequest<{ unit: Unit }>(`/properties/${propertyId}/units/${unitId}`);
-    Promise.all([propertyRequest, unitRequest])
-      .then(([propertyResult, unitResult]) => {
+    const existingUnitsRequest = unitId === undefined
+      ? apiRequest<{ units: Unit[] }>(`/properties/${propertyId}/units?includeArchived=true`)
+      : Promise.resolve(undefined);
+    Promise.all([propertyRequest, unitRequest, existingUnitsRequest])
+      .then(([propertyResult, unitResult, existingUnitsResult]) => {
         if (!active) return;
         setProperty(propertyResult.property);
+        setExistingUnits(existingUnitsResult?.units ?? []);
         if (unitResult) {
           if (unitResult.unit.archivedAt) {
             setError("Restore this unit before editing its details.");
@@ -474,20 +482,43 @@ export function UnitFormPage({
     setValues((current) => ({ ...current, [field]: value }));
   };
 
+  const batchPreview = bulkMode
+    ? generateUnitNames(values.name, batchCount)
+    : null;
+  const existingNames = new Set(
+    existingUnits
+      .filter((unit) => unit.archivedAt === null)
+      .map((unit) => unit.name.trim().toLowerCase()),
+  );
+  const duplicateNames = batchPreview?.names.filter((name) =>
+    existingNames.has(name.trim().toLowerCase()),
+  ) ?? [];
+
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setSaving(true);
     setError("");
     try {
-      const result = await apiRequest<{ unit: Unit }>(
-        unitId === undefined
-          ? `/properties/${propertyId}/units`
-          : `/properties/${propertyId}/units/${unitId}`,
-        unitId === undefined ? "POST" : "PUT",
-        values,
-      );
-      flash(unitId === undefined ? "Unit created." : "Unit details saved.");
-      navigate(`/properties/${propertyId}/units/${result.unit.id}`);
+      if (unitId === undefined && bulkMode) {
+        const names = batchPreview?.names ?? [];
+        const result = await apiRequest<{ units: Unit[] }>(
+          `/properties/${propertyId}/units`,
+          "POST",
+          { units: names.map((name) => ({ ...values, name })) },
+        );
+        flash(`${result.units.length} units created.`);
+        navigate(`/properties/${propertyId}`);
+      } else {
+        const result = await apiRequest<{ unit: Unit }>(
+          unitId === undefined
+            ? `/properties/${propertyId}/units`
+            : `/properties/${propertyId}/units/${unitId}`,
+          unitId === undefined ? "POST" : "PUT",
+          values,
+        );
+        flash(unitId === undefined ? "Unit created." : "Unit details saved.");
+        navigate(`/properties/${propertyId}/units/${result.unit.id}`);
+      }
     } catch (reason) {
       setError(errorMessage(reason));
     } finally {
@@ -506,16 +537,60 @@ export function UnitFormPage({
       <PageBack navigate={navigate} to={unitId ? `/properties/${propertyId}/units/${unitId}` : `/properties/${propertyId}`} label={unitId ? "Unit details" : property.name} />
       <div className="form-heading">
         <p className="eyebrow"><span /> {property.name.toUpperCase()}</p>
-        <h1 className="page-title">{unitId === undefined ? "Add a unit" : "Edit unit"}</h1>
-        <p className="page-intro">Describe a rentable space within this property.</p>
+        <h1 className="page-title">
+          {unitId !== undefined ? "Edit unit" : bulkMode ? "Add multiple units" : "Add a unit"}
+        </h1>
+        <p className="page-intro">
+          {bulkMode
+            ? "Create a numbered range of rooms with the same details."
+            : "Describe a rentable space within this property."}
+        </p>
       </div>
       {property.status === "archived" && <ErrorState message="Restore this property before adding or editing units." />}
       {error && <ErrorState message={error} />}
+      {unitId === undefined && (
+        <div className="tab-group unit-create-mode" aria-label="Unit creation mode">
+          <button
+            className={!bulkMode ? "tab active" : "tab"}
+            type="button"
+            onClick={() => setBulkMode(false)}
+          >
+            One unit
+          </button>
+          <button
+            className={bulkMode ? "tab active" : "tab"}
+            type="button"
+            onClick={() => setBulkMode(true)}
+          >
+            Multiple similar units
+          </button>
+        </div>
+      )}
       <form className="editor-card" onSubmit={submit}>
         <div className="form-grid">
-          <Field label="Unit name or number" required className="span-2" hint="Must be unique within this property.">
+          <Field
+            label={bulkMode ? "Starting room name or number" : "Unit name or number"}
+            required
+            className="span-2"
+            hint={bulkMode
+              ? "Include the number to increment, for example 001-R or BLD-001-R."
+              : "Must be unique within this property."}
+          >
             <input value={values.name} onChange={(event) => update("name", event.target.value)} maxLength={100} required autoFocus />
           </Field>
+          {bulkMode && (
+            <Field label="Number of units" required hint={`Create up to ${maximumBulkUnits} units at a time.`}>
+              <input
+                type="number"
+                value={batchCount}
+                onChange={(event) => setBatchCount(Number(event.target.value))}
+                min={1}
+                max={maximumBulkUnits}
+                step={1}
+                required
+              />
+            </Field>
+          )}
           <Field label="Unit type" required>
             <select value={values.unitType} onChange={(event) => update("unitType", event.target.value as UnitType)}>
               {unitTypeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
@@ -531,12 +606,49 @@ export function UnitFormPage({
             <textarea value={values.description ?? ""} onChange={(event) => update("description", event.target.value)} rows={4} maxLength={2000} />
           </Field>
         </div>
+        {bulkMode && batchPreview && (
+          <div
+            className={`unit-batch-preview${duplicateNames.length ? " has-conflicts" : ""}`}
+            aria-live="polite"
+          >
+            {batchPreview.error ? (
+              <p>{batchPreview.error}</p>
+            ) : duplicateNames.length ? (
+              <p>
+                These names already exist in this property: {duplicateNames.slice(0, 10).join(", ")}
+                {duplicateNames.length > 10 ? `, and ${duplicateNames.length - 10} more` : ""}.
+                No units will be created until the conflicts are resolved.
+              </p>
+            ) : (
+              <p>Preview: {batchPreview.names.length} unique room names. No existing-name conflicts.</p>
+            )}
+            {batchPreview.names.length > 0 && (
+              <ul>
+                {batchPreview.names.slice(0, 10).map((name) => (
+                  <li key={name}>{name}</li>
+                ))}
+                {batchPreview.names.length > 10 && (
+                  <li>…and {batchPreview.names.length - 10} more</li>
+                )}
+              </ul>
+            )}
+          </div>
+        )}
         <FormActions
           navigate={navigate}
           cancelTo={unitId ? `/properties/${propertyId}/units/${unitId}` : `/properties/${propertyId}`}
           saving={saving}
-          disabled={property.status === "archived"}
-          submitLabel={unitId === undefined ? "Create unit" : "Save changes"}
+          disabled={property.status === "archived" ||
+            (bulkMode && (
+              !batchPreview ||
+              batchPreview.error !== null ||
+              duplicateNames.length > 0
+            ))}
+          submitLabel={unitId !== undefined
+            ? "Save changes"
+            : bulkMode
+              ? `Create ${batchCount} units`
+              : "Create unit"}
         />
       </form>
     </section>

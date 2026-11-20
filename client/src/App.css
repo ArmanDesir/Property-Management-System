@@ -117,6 +117,12 @@ footer span:first-child { font: 700 9px "Segoe UI", Arial, sans-serif; letter-sp
 .back-link span { font-size: 16px; }
 .form-heading { margin-bottom: 22px; }
 .editor-card { padding: 24px; border: 1px solid #e3e9e1; border-radius: 6px; background: #fbfcf9; }
+.unit-create-mode { margin: 0 0 14px; }
+.unit-batch-preview { display: block; min-height: 0; margin: 18px 0 0; padding: 14px 16px; }
+.unit-batch-preview p { margin: 0; }
+.unit-batch-preview ul { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 0; padding: 0; list-style: none; }
+.unit-batch-preview li { padding: 4px 8px; border-radius: 4px; background: #edf2eb; color: #536455; font-size: 11px; }
+.unit-batch-preview.has-conflicts { border-color: #e7c2b9; background: #fff8f6; color: #9c4635; }
 .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 16px; }
 .span-2 { grid-column: span 2; }
 .form-field { display: flex; min-width: 0; flex-direction: column; gap: 7px; }

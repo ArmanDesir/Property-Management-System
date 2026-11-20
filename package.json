@@ -31,7 +31,8 @@
     "test:phase11": "npm run test:phase11 --workspace server",
     "test:classroom": "npm run test:classroom --workspace server",
     "test:navigation": "node client/scripts/test-navigation.mjs",
-    "test": "npm run test:db && npm run test:api && npm run test:billing && npm run test:reports && npm run test:auth && npm run test:maintenance && npm run test:phase11 && npm run test:classroom && npm run test:navigation"
+    "test:unit-names": "node --experimental-strip-types client/scripts/test-unit-names.mjs",
+    "test": "npm run test:db && npm run test:api && npm run test:billing && npm run test:reports && npm run test:auth && npm run test:maintenance && npm run test:phase11 && npm run test:classroom && npm run test:navigation && npm run test:unit-names"
   },
   "devDependencies": {
     "concurrently": "^9.1.2",

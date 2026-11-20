@@ -1063,6 +1063,59 @@ try {
     database.$client.prepare("DELETE FROM properties WHERE id = ?").run(propertyId);
   });
 
+  const bulkProperty = await request("/properties", "POST", {
+    name: "Synthetic Bulk Unit Property",
+    propertyType: "hotel",
+    defaultCurrency: "USD",
+  });
+  assert.equal(bulkProperty.status, 201);
+  const bulkUnits = await request(
+    `/properties/${bulkProperty.data.property.id}/units`,
+    "POST",
+    {
+      units: ["001-R", "002-R", "003-R"].map((name) => ({
+        name,
+        unitType: "room",
+        description: "Synthetic standard room",
+        capacity: 2,
+        baseNightlyRate: 150,
+      })),
+    },
+  );
+  assert.equal(bulkUnits.status, 201);
+  assert.deepEqual(
+    bulkUnits.data.units.map((unit: { name: string }) => unit.name),
+    ["001-R", "002-R", "003-R"],
+  );
+  assert.ok(bulkUnits.data.units.every(
+    (unit: { capacity: number; baseNightlyRateCents: number }) =>
+      unit.capacity === 2 && unit.baseNightlyRateCents === 15000,
+  ));
+  const conflictingBulk = await request(
+    `/properties/${bulkProperty.data.property.id}/units`,
+    "POST",
+    {
+      units: ["004-R", "002-R"].map((name) => ({
+        name,
+        unitType: "room",
+        capacity: 2,
+        baseNightlyRate: 150,
+      })),
+    },
+  );
+  assert.equal(conflictingBulk.status, 409);
+  assert.match(conflictingBulk.data.error, /No units were created/);
+  assert.equal(
+    (await request(`/properties/${bulkProperty.data.property.id}/units`)).data.units.length,
+    3,
+  );
+  assert.equal(
+    (await request(`/properties/${bulkProperty.data.property.id}/units`, "POST", {
+      units: [],
+    })).status,
+    400,
+  );
+
   let foreignKeyRejected = false;
   try {
     database.$client
