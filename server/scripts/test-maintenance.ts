@@ -56,6 +56,7 @@ try {
     username: "maintenance-front-desk",
     role: "front_desk",
     password: "synthetic-maintenance-frontdesk",
+    propertyIds: [propertyId],
   });
   assert.equal(frontDeskCreated.status, 201);
   const housekeepingCreated = await admin("/staff", "POST", {
@@ -63,6 +64,7 @@ try {
     username: "maintenance-housekeeping",
     role: "housekeeping",
     password: "synthetic-maintenance-housekeeping",
+    propertyIds: [propertyId],
   });
   assert.equal(housekeepingCreated.status, 201);
   const accountingCreated = await admin("/staff", "POST", {
@@ -70,6 +72,7 @@ try {
     username: "maintenance-accounting",
     role: "accounting",
     password: "synthetic-maintenance-accounting",
+    propertyIds: [propertyId],
   });
   assert.equal(accountingCreated.status, 201);
   const inactiveStaff = await admin("/staff", "POST", {
@@ -143,6 +146,14 @@ try {
     assignedStaffId: inactiveStaffId,
   });
   assert.equal(badAssignment.status, 400);
+  const crossPropertyAssignment = await admin("/maintenance", "POST", {
+    propertyId: secondPropertyId,
+    title: "Cross-property assignment",
+    description: "Synthetic description",
+    category: "plumbing",
+    assignedStaffId: frontDeskCreated.data.staff.id,
+  });
+  assert.equal(crossPropertyAssignment.status, 400);
   const extraField = await admin("/maintenance", "POST", {
     propertyId,
     title: "Unsupported field",

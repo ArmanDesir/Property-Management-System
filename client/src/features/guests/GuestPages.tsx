@@ -5,6 +5,7 @@ import {
   LoadingState,
 } from "../properties/PropertiesPages";
 import { apiRequest } from "../../lib/api";
+import type { StaffUser } from "../auth/AuthPage";
 import {
   fetchGuests,
   type Guest,
@@ -43,9 +44,15 @@ const emptyGuest: GuestFormValues = {
   notes: "",
 };
 
-export function GuestsPage({ navigate }: PageProps) {
+export function GuestsPage({
+  navigate,
+  role,
+  initialPropertyId = "",
+}: PageProps & { role: StaffUser["role"]; initialPropertyId?: string }) {
   const [status, setStatus] = useState<GuestStatusFilter>("active");
   const [search, setSearch] = useState("");
+  const [propertyId, setPropertyId] = useState(initialPropertyId);
+  const [properties, setProperties] = useState<Array<{ id: number; name: string }>>([]);
   const [records, setRecords] = useState<GuestListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -53,10 +60,39 @@ export function GuestsPage({ navigate }: PageProps) {
 
   useEffect(() => {
     let current = true;
+    apiRequest<{ properties: Array<{ id: number; name: string }> }>("/properties")
+      .then(({ properties: result }) => {
+        if (!current) return;
+        setProperties(result);
+        if (
+          role !== "administrator" &&
+          !result.some((property) => String(property.id) === initialPropertyId) &&
+          result.length > 0
+        ) {
+          setPropertyId(String(result[0].id));
+        }
+      })
+      .catch((reason: unknown) => {
+        if (current) setError(errorMessage(reason));
+      });
+    return () => {
+      current = false;
+    };
+  }, [initialPropertyId, role]);
+
+  useEffect(() => {
+    let current = true;
+    if (role !== "administrator" && !propertyId) {
+      setRecords([]);
+      setLoading(false);
+      return () => {
+        current = false;
+      };
+    }
     const timer = window.setTimeout(() => {
       setLoading(true);
       setError("");
-      fetchGuests(status, search.trim())
+      fetchGuests(status, search.trim(), propertyId || undefined)
         .then((result) => {
           if (current) setRecords(result);
         })
@@ -71,7 +107,7 @@ export function GuestsPage({ navigate }: PageProps) {
       current = false;
       window.clearTimeout(timer);
     };
-  }, [status, search, refreshKey]);
+  }, [role, status, search, propertyId, refreshKey]);
 
   return (
     <section className="page-section">
@@ -81,12 +117,27 @@ export function GuestsPage({ navigate }: PageProps) {
           <h1 className="page-title">Guest directory</h1>
           <p className="page-intro">Keep guest contact details and profile notes organized locally.</p>
         </div>
-        <button className="button button-primary" onClick={() => navigate("/guests/new")}>
+        <button
+          className="button button-primary"
+          disabled={role !== "administrator" && !propertyId}
+          onClick={() => navigate(`/guests/new${propertyId ? `?propertyId=${propertyId}` : ""}`)}
+        >
           <span aria-hidden="true">＋</span> Add guest
         </button>
       </div>
 
       <div className="guest-toolbar">
+        {properties.length > 1 && (
+          <label className="form-field">
+            <span className="field-label">Property</span>
+            <select value={propertyId} onChange={(event) => setPropertyId(event.target.value)}>
+              {role === "administrator" && <option value="">All properties</option>}
+              {properties.map((property) => (
+                <option key={property.id} value={property.id}>{property.name}</option>
+              ))}
+            </select>
+          </label>
+        )}
         <label className="guest-search">
           <span aria-hidden="true">⌕</span>
           <input
@@ -138,8 +189,12 @@ export function GuestsPage({ navigate }: PageProps) {
                 ? "Add a guest profile to keep their contact details in one place."
                 : "There are no guest profiles to show with this filter."}
           </p>
-          {!search && status !== "archived" && (
-            <button className="button button-primary" onClick={() => navigate("/guests/new")}>
+          {!search && status !== "archived" &&
+            (role === "administrator" || propertyId) && (
+            <button
+              className="button button-primary"
+              onClick={() => navigate(`/guests/new${propertyId ? `?propertyId=${propertyId}` : ""}`)}
+            >
               Add your first guest
             </button>
           )}
@@ -151,7 +206,9 @@ export function GuestsPage({ navigate }: PageProps) {
             <button
               className="property-card guest-card"
               key={guest.id}
-              onClick={() => navigate(`/guests/${guest.id}`)}
+              onClick={() => navigate(
+                `/guests/${guest.id}${propertyId ? `?propertyId=${propertyId}` : ""}`,
+              )}
             >
               <span className="property-card-icon" aria-hidden="true">◎</span>
               <span className="guest-card-body">
@@ -171,16 +228,22 @@ export function GuestsPage({ navigate }: PageProps) {
   );
 }
 
-export function GuestFormPage({ guestId, navigate, flash }: PageProps & { guestId?: number }) {
+export function GuestFormPage({
+  guestId,
+  propertyId,
+  navigate,
+  flash,
+}: PageProps & { guestId?: number; propertyId?: number }) {
   const [values, setValues] = useState<GuestFormValues>(emptyGuest);
   const [loading, setLoading] = useState(guestId !== undefined);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const propertyQuery = propertyId === undefined ? "" : `?propertyId=${propertyId}`;
 
   useEffect(() => {
     if (guestId === undefined) return;
     let current = true;
-    apiRequest<{ guest: Guest }>(`/guests/${guestId}`)
+    apiRequest<{ guest: Guest }>(`/guests/${guestId}${propertyQuery}`)
       .then(({ guest }) => {
         if (!current) return;
         if (guest.status === "archived") {
@@ -198,7 +261,7 @@ export function GuestFormPage({ guestId, navigate, flash }: PageProps & { guestI
     return () => {
       current = false;
     };
-  }, [guestId]);
+  }, [guestId, propertyQuery]);
 
   const update = (field: keyof GuestFormValues, value: string) => {
     setValues((current) => ({ ...current, [field]: value }));
@@ -222,13 +285,46 @@ export function GuestFormPage({ guestId, navigate, flash }: PageProps & { guestI
       notes: values.notes.trim() || null,
     };
     try {
-      const result = await apiRequest<{ guest: Guest }>(
-        guestId === undefined ? "/guests" : `/guests/${guestId}`,
-        guestId === undefined ? "POST" : "PATCH",
-        input,
-      );
-      navigate(`/guests/${result.guest.id}`);
-      flash(guestId === undefined ? "Guest profile created." : "Guest profile updated.");
+      if (guestId === undefined) {
+        const matchParams = new URLSearchParams();
+        if (input.email) matchParams.set("email", input.email);
+        if (input.phone) matchParams.set("phone", input.phone);
+        if (propertyId !== undefined) matchParams.set("propertyId", String(propertyId));
+        const match = await apiRequest<{
+          guest: Pick<Guest, "id" | "firstName" | "lastName" | "email" | "phone"> | null;
+        }>(`/guests/match?${matchParams.toString()}`);
+        if (match.guest) {
+          const matched = window.confirm(
+            `A matching guest profile exists for ${match.guest.firstName} ${match.guest.lastName} (${match.guest.email || match.guest.phone}). Link this profile to this property? Only this property's stay history will be available.`,
+          );
+          if (!matched) return;
+          const linked = await apiRequest<{ guest: Pick<Guest, "id">; linked: boolean }>(
+            `/guests/${match.guest.id}/link${propertyQuery}`,
+            "POST",
+            { email: input.email, phone: input.phone },
+          );
+          navigate(`/guests/${linked.guest.id}${propertyQuery}`);
+          flash(propertyId === undefined
+            ? "Existing guest profile selected."
+            : "Existing guest profile linked to this property.");
+        } else {
+          const result = await apiRequest<{ guest: Guest }>(
+            `/guests${propertyQuery}`,
+            "POST",
+            input,
+          );
+          navigate(`/guests/${result.guest.id}${propertyQuery}`);
+          flash("Guest profile created.");
+        }
+      } else {
+        const result = await apiRequest<{ guest: Guest }>(
+          `/guests/${guestId}${propertyQuery}`,
+          "PATCH",
+          input,
+        );
+        navigate(`/guests/${result.guest.id}${propertyQuery}`);
+        flash("Guest profile updated.");
+      }
     } catch (reason) {
       setError(errorMessage(reason));
     } finally {
@@ -243,7 +339,7 @@ export function GuestFormPage({ guestId, navigate, flash }: PageProps & { guestI
 
   return (
     <section className="page-section narrow-page">
-      <button className="back-link" onClick={() => navigate(guestId ? `/guests/${guestId}` : "/guests")}>
+      <button className="back-link" onClick={() => navigate(guestId ? `/guests/${guestId}${propertyQuery}` : `/guests${propertyQuery}`)}>
         <span aria-hidden="true">←</span> {guestId ? "Guest profile" : "Guest directory"}
       </button>
       <div className="form-heading">
@@ -317,7 +413,7 @@ export function GuestFormPage({ guestId, navigate, flash }: PageProps & { guestI
           </GuestField>
         </div>
         <div className="form-actions">
-          <button type="button" className="button button-secondary" onClick={() => navigate(guestId ? `/guests/${guestId}` : "/guests")}>
+          <button type="button" className="button button-secondary" onClick={() => navigate(guestId ? `/guests/${guestId}${propertyQuery}` : `/guests${propertyQuery}`)}>
             Cancel
           </button>
           <button className="button button-primary" disabled={saving}>
@@ -329,7 +425,13 @@ export function GuestFormPage({ guestId, navigate, flash }: PageProps & { guestI
   );
 }
 
-export function GuestDetailsPage({ guestId, navigate, flash }: PageProps & { guestId: number }) {
+export function GuestDetailsPage({
+  guestId,
+  propertyId,
+  role,
+  navigate,
+  flash,
+}: PageProps & { guestId: number; propertyId?: number; role: StaffUser["role"] }) {
   const [guest, setGuest] = useState<Guest | null>(null);
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [reservationCount, setReservationCount] = useState(0);
@@ -339,10 +441,11 @@ export function GuestDetailsPage({ guestId, navigate, flash }: PageProps & { gue
   const [error, setError] = useState("");
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [working, setWorking] = useState(false);
+  const propertyQuery = propertyId === undefined ? "" : `?propertyId=${propertyId}`;
 
   useEffect(() => {
     let current = true;
-    apiRequest<{ guest: Guest }>(`/guests/${guestId}`)
+    apiRequest<{ guest: Guest }>(`/guests/${guestId}${propertyQuery}`)
       .then(({ guest: result }) => {
         if (current) setGuest(result);
       })
@@ -355,11 +458,12 @@ export function GuestDetailsPage({ guestId, navigate, flash }: PageProps & { gue
     return () => {
       current = false;
     };
-  }, [guestId]);
+  }, [guestId, propertyQuery]);
 
   useEffect(() => {
     let current = true;
     const params = new URLSearchParams({ guestId: String(guestId), limit: "5" });
+    if (propertyId !== undefined) params.set("propertyId", String(propertyId));
     apiRequest<{ reservations: Reservation[]; total: number }>(`/reservations?${params.toString()}`)
       .then((result) => {
         if (!current) return;
@@ -375,13 +479,13 @@ export function GuestDetailsPage({ guestId, navigate, flash }: PageProps & { gue
     return () => {
       current = false;
     };
-  }, [guestId]);
+  }, [guestId, propertyId]);
 
   const restore = async () => {
     setWorking(true);
     setError("");
     try {
-      const result = await apiRequest<{ guest: Guest }>(`/guests/${guestId}/restore`, "POST");
+      const result = await apiRequest<{ guest: Guest }>(`/guests/${guestId}/restore${propertyQuery}`, "POST");
       setGuest(result.guest);
       flash("Guest restored.");
     } catch (reason) {
@@ -395,7 +499,7 @@ export function GuestDetailsPage({ guestId, navigate, flash }: PageProps & { gue
     setWorking(true);
     setError("");
     try {
-      await apiRequest<{ guest: Guest }>(`/guests/${guestId}/archive`, "POST");
+      await apiRequest<{ guest: Guest }>(`/guests/${guestId}/archive${propertyQuery}`, "POST");
       setArchiveOpen(false);
       navigate("/guests");
       flash("Guest archived.");
@@ -413,7 +517,7 @@ export function GuestDetailsPage({ guestId, navigate, flash }: PageProps & { gue
 
   return (
     <section className="page-section">
-      <button className="back-link" onClick={() => navigate("/guests")}>
+      <button className="back-link" onClick={() => navigate(`/guests${propertyQuery}`)}>
         <span aria-hidden="true">←</span> Guest directory
       </button>
       <div className="detail-heading">
@@ -428,18 +532,20 @@ export function GuestDetailsPage({ guestId, navigate, flash }: PageProps & { gue
         <div className="heading-actions">
           {guest.status === "active" ? (
             <>
-              <button className="button button-secondary" onClick={() => navigate(`/guests/${guest.id}/edit`)}>
+              <button className="button button-secondary" onClick={() => navigate(`/guests/${guest.id}/edit${propertyQuery}`)}>
                 Edit profile
               </button>
-              <button className="button button-danger-outline" onClick={() => setArchiveOpen(true)}>
-                Archive guest
-              </button>
+              {role === "administrator" && (
+                <button className="button button-danger-outline" onClick={() => setArchiveOpen(true)}>
+                  Archive guest
+                </button>
+              )}
             </>
-          ) : (
+          ) : role === "administrator" ? (
             <button className="button button-primary" disabled={working} onClick={restore}>
               {working ? "Restoring…" : "Restore guest"}
             </button>
-          )}
+          ) : null}
         </div>
       </div>
       {error && <ErrorState message={error} />}
@@ -482,7 +588,7 @@ export function GuestDetailsPage({ guestId, navigate, flash }: PageProps & { gue
                 <button
                   className="guest-reservation-row"
                   key={reservation.id}
-                  onClick={() => navigate(`/reservations/${reservation.id}`)}
+                  onClick={() => navigate(`/reservations/${reservation.id}${propertyQuery}`)}
                 >
                   <span><strong>{reservation.reservationReference}</strong><small>{reservation.propertyName} · {reservation.unitName ?? "No unit assigned"}</small></span>
                   <span><strong>{reservation.checkIn} – {reservation.checkOut}</strong><small>{formatReservationMoney(reservation.totalAmountCents, reservation.currency)}</small></span>
@@ -492,11 +598,11 @@ export function GuestDetailsPage({ guestId, navigate, flash }: PageProps & { gue
             </div>
           )}
           <div className="guest-history-actions">
-            <button className="text-button" onClick={() => navigate(`/reservations?guestId=${guest.id}`)}>
+            <button className="text-button" onClick={() => navigate(`/reservations?guestId=${guest.id}${propertyId === undefined ? "" : `&propertyId=${propertyId}`}`)}>
               View all {reservationCount} {reservationCount === 1 ? "reservation" : "reservations"} ↗
             </button>
-            {guest.status === "active" && (
-              <button className="text-button" onClick={() => navigate(`/reservations/new?guestId=${guest.id}`)}>
+            {guest.status === "active" && role !== "property_manager" && (
+              <button className="text-button" onClick={() => navigate(`/reservations/new?guestId=${guest.id}${propertyId === undefined ? "" : `&propertyId=${propertyId}`}`)}>
                 Create reservation ↗
               </button>
             )}

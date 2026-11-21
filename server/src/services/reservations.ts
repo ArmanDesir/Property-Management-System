@@ -20,6 +20,7 @@ export interface ReservationFilters {
   status: ReservationStatusFilter;
   search: string;
   propertyId: number | null;
+  propertyIds?: number[];
   unitId: number | null;
   guestId: number | null;
   checkInFrom: string | null;
@@ -92,6 +93,14 @@ export function listReservations(database: PmsDatabase, filters: ReservationFilt
   if (filters.propertyId !== null) {
     conditions.push("r.property_id = ?");
     parameters.push(filters.propertyId);
+  }
+  if (filters.propertyIds !== undefined) {
+    if (filters.propertyIds.length === 0) {
+      conditions.push("0 = 1");
+    } else {
+      conditions.push(`r.property_id IN (${filters.propertyIds.map(() => "?").join(", ")})`);
+      parameters.push(...filters.propertyIds);
+    }
   }
   if (filters.unitId !== null) {
     conditions.push("r.unit_id = ?");
@@ -210,6 +219,11 @@ export function createReservation(
       unit.default_currency,
       draft.notes,
     );
+    client.prepare(`
+      INSERT INTO guest_property_access (guest_id, property_id)
+      VALUES (?, ?)
+      ON CONFLICT(guest_id, property_id) DO NOTHING
+    `).run(draft.guestId, integerValue(unit.property_id));
     return getReservation(database, Number(result.lastInsertRowid));
   });
 }
@@ -257,6 +271,11 @@ export function updateReservation(
       new Date().toISOString(),
       id,
     );
+    client.prepare(`
+      INSERT INTO guest_property_access (guest_id, property_id)
+      VALUES (?, ?)
+      ON CONFLICT(guest_id, property_id) DO NOTHING
+    `).run(draft.guestId, integerValue(unit.property_id));
     return getReservation(database, id);
   });
 }

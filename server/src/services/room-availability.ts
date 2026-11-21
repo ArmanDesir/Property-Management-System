@@ -6,15 +6,21 @@ import { listTaskProperties } from "./team-tasks.js";
 export type RoomNightStatus = "available" | "reserved" | "occupied" | "unavailable";
 
 export function listCalendarProperties(database: PmsDatabase, actor: AuthenticatedStaff) {
-  if (actor.role === "administrator" || actor.role === "front_desk") {
+  if (actor.role === "administrator") {
     return database.$client.prepare(`
       SELECT id, name, property_type AS propertyType FROM properties
       WHERE status = 'active'
       ORDER BY name COLLATE NOCASE, id
     `).all();
   }
-  if (actor.role === "property_manager") {
-    return listTaskProperties(database, actor);
+  if (actor.role === "property_manager" || actor.role === "front_desk") {
+    if (actor.role === "property_manager") return listTaskProperties(database, actor);
+    if (actor.propertyIds.length === 0) return [];
+    return database.$client.prepare(`
+      SELECT id, name, property_type AS propertyType FROM properties
+      WHERE status = 'active' AND id IN (${actor.propertyIds.map(() => "?").join(", ")})
+      ORDER BY name COLLATE NOCASE, id
+    `).all(...actor.propertyIds);
   }
   throw new HttpError(403, "Your staff role cannot view room availability.");
 }

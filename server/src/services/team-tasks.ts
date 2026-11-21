@@ -67,7 +67,7 @@ export function listTaskProperties(database: PmsDatabase, actor: AuthenticatedSt
   if (actor.role !== "property_manager") return [];
   return database.$client.prepare(`
     SELECT p.id, p.name, p.property_type AS propertyType
-    FROM property_manager_properties a
+    FROM staff_property_assignments a
     JOIN properties p ON p.id = a.property_id
     WHERE a.staff_id = ? AND p.status = 'active'
     ORDER BY p.name COLLATE NOCASE, p.id
@@ -91,10 +91,12 @@ export function getTaskOptions(
   if (selected.length === 0) return { properties, staff: [], units: [], reservations: [] };
   const marks = selected.map(() => "?").join(", ");
   const staff = database.$client.prepare(`
-    SELECT id, display_name, role FROM staff_accounts
-    WHERE is_active = 1 AND role IN ('front_desk', 'housekeeping', 'accounting')
-    ORDER BY display_name COLLATE NOCASE, id
-  `).all().map((row) => ({
+    SELECT DISTINCT s.id, s.display_name, s.role FROM staff_accounts s
+    JOIN staff_property_assignments a ON a.staff_id = s.id
+    WHERE s.is_active = 1 AND s.role IN ('front_desk', 'housekeeping', 'accounting')
+      AND a.property_id IN (${marks})
+    ORDER BY s.display_name COLLATE NOCASE, s.id
+  `).all(...selected).map((row) => ({
     id: numberValue(row.id),
     displayName: textValue(row.display_name),
     department: textValue(row.role),
@@ -401,8 +403,11 @@ function validateTaskReferences(
   `).get(draft.propertyId);
   if (!property) throw new HttpError(404, "Active property not found.");
   const assignee = client.prepare(`
-    SELECT role, is_active FROM staff_accounts WHERE id = ?
-  `).get(draft.assignedStaffId);
+    SELECT s.role, s.is_active FROM staff_accounts s
+    JOIN staff_property_assignments a
+      ON a.staff_id = s.id AND a.property_id = ?
+    WHERE s.id = ?
+  `).get(draft.propertyId, draft.assignedStaffId);
   if (!assignee || assignee.is_active !== 1) throw new HttpError(400, "Assignee must be an active staff member.");
   if (textValue(assignee.role) !== draft.department) {
     throw new HttpError(400, "Assignee must belong to the selected department.");
@@ -439,7 +444,7 @@ function assertManagerProperty(
 
 function isManagerProperty(client: PmsDatabase["$client"], staffId: number, propertyId: number): boolean {
   return client.prepare(`
-    SELECT 1 FROM property_manager_properties a
+    SELECT 1 FROM staff_property_assignments a
     JOIN properties p ON p.id = a.property_id
     WHERE a.staff_id = ? AND a.property_id = ? AND p.status = 'active'
   `).get(staffId, propertyId) !== undefined;

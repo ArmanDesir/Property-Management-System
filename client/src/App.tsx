@@ -289,7 +289,7 @@ function App() {
           {(role === "administrator" || role === "accounting") && (
             <NavLink path="/reports" label="Reports" active={isReportsRoute} navigate={navigate} />
           )}
-          {role === "administrator" && (
+          {(role === "administrator" || role === "property_manager") && (
             <NavLink path="/staff" label="Staff" active={route.name === "staff"} navigate={navigate} />
           )}
           <NavLink
@@ -353,13 +353,33 @@ function App() {
           unitId={route.unitId}
         />
       )}
-      {route.name === "guests" && <GuestsPage {...pageProps} />}
-      {route.name === "new-guest" && <GuestFormPage {...pageProps} />}
+      {route.name === "guests" && (
+        <GuestsPage
+          {...pageProps}
+          role={role}
+          initialPropertyId={new URLSearchParams(locationSearch).get("propertyId") ?? ""}
+        />
+      )}
+      {route.name === "new-guest" && (
+        <GuestFormPage
+          {...pageProps}
+          propertyId={queryPropertyId(locationSearch)}
+        />
+      )}
       {route.name === "guest-details" && (
-        <GuestDetailsPage {...pageProps} guestId={route.guestId} />
+        <GuestDetailsPage
+          {...pageProps}
+          guestId={route.guestId}
+          propertyId={queryPropertyId(locationSearch)}
+          role={role}
+        />
       )}
       {route.name === "edit-guest" && (
-        <GuestFormPage {...pageProps} guestId={route.guestId} />
+        <GuestFormPage
+          {...pageProps}
+          guestId={route.guestId}
+          propertyId={queryPropertyId(locationSearch)}
+        />
       )}
       {route.name === "reservations" && (
         <ReservationsPage
@@ -377,7 +397,7 @@ function App() {
       {route.name === "billing" && (
         <BillingPage {...pageProps} readOnly={role === "front_desk"} />
       )}
-      {route.name === "reports" && <ReportsPage navigate={navigate} />}
+      {route.name === "reports" && <ReportsPage navigate={navigate} role={role} />}
       {route.name === "new-invoice" && (
         <InvoiceFormPage key={locationSearch} {...pageProps} />
       )}
@@ -390,7 +410,12 @@ function App() {
         />
       )}
       {route.name === "staff" && (
-        <StaffPage currentUserId={staffUser.id} {...pageProps} />
+        <StaffPage
+          currentUserId={staffUser.id}
+          readOnly={role === "property_manager"}
+          propertyIds={staffUser.propertyIds}
+          {...pageProps}
+        />
       )}
       {route.name === "maintenance" && (
         <MaintenancePage role={role} {...pageProps} />
@@ -674,6 +699,12 @@ function resolveRoute(path: string): Route {
   return { name: "not-found" };
 }
 
+function queryPropertyId(search: string): number | undefined {
+  const value = new URLSearchParams(search).get("propertyId");
+  if (value === null) return undefined;
+  return /^\d+$/.test(value) && Number(value) > 0 ? Number(value) : 0;
+}
+
 function canAccessRoute(route: Route, role: StaffUser["role"]): boolean {
   if (route.name === "dashboard" || route.name === "not-found") return true;
   if (role === "administrator") return true;
@@ -681,7 +712,8 @@ function canAccessRoute(route: Route, role: StaffUser["role"]): boolean {
   if (role === "property_manager") {
     return route.name === "room-availability" ||
       route.name === "maintenance" ||
-      route.name === "housekeeping";
+      route.name === "housekeeping" ||
+      route.name === "staff";
   }
   if (role === "front_desk") {
     return [

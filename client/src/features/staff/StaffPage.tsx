@@ -34,13 +34,20 @@ export function StaffPage({
   currentUserId,
   navigate,
   flash,
+  readOnly = false,
+  propertyIds = [],
 }: {
   currentUserId: number;
   navigate: (path: string) => void;
   flash: (message: string) => void;
+  readOnly?: boolean;
+  propertyIds?: number[];
 }) {
   const [staff, setStaff] = useState<StaffUser[]>([]);
   const [properties, setProperties] = useState<Array<{ id: number; name: string }>>([]);
+  const [selectedPropertyId, setSelectedPropertyId] = useState(
+    readOnly ? String(propertyIds[0] ?? "") : "",
+  );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [draft, setDraft] = useState<StaffDraft | null>(null);
@@ -61,17 +68,23 @@ export function StaffPage({
     setError("");
     try {
       const [result, propertyResult, classroomResult] = await Promise.all([
-        apiRequest<{ staff: StaffUser[] }>("/staff"),
+        apiRequest<{ staff: StaffUser[] }>(
+          `/staff${readOnly && selectedPropertyId
+            ? `?propertyId=${encodeURIComponent(selectedPropertyId)}`
+            : ""}`,
+        ),
         apiRequest<{ properties: Array<{ id: number; name: string }> }>("/properties"),
-        apiRequest<{
-          recoveryPinConfigured: boolean;
-          baselineSaved: boolean;
-          baselineSavedAt?: string;
-        }>("/classroom/status"),
+        readOnly
+          ? Promise.resolve(null)
+          : apiRequest<{
+            recoveryPinConfigured: boolean;
+            baselineSaved: boolean;
+            baselineSavedAt?: string;
+          }>("/classroom/status"),
       ]);
       setStaff(result.staff);
       setProperties(propertyResult.properties);
-      setClassroomStatus(classroomResult);
+      if (classroomResult) setClassroomStatus(classroomResult);
     } catch (reason) {
       setError(errorMessage(reason));
     } finally {
@@ -81,7 +94,7 @@ export function StaffPage({
 
   useEffect(() => {
     void refresh();
-  }, []);
+  }, [selectedPropertyId]);
 
   const edit = (user?: StaffUser) => {
     setEditingId(user?.id ?? null);
@@ -106,7 +119,7 @@ export function StaffPage({
         displayName: draft.displayName,
         username: draft.username,
         role: draft.role,
-        propertyIds: draft.role === "property_manager" ? draft.propertyIds : [],
+        propertyIds: draft.role === "administrator" ? [] : draft.propertyIds,
         ...(draft.password ? { password: draft.password } : {}),
       };
       await apiRequest(
@@ -216,14 +229,34 @@ export function StaffPage({
         <div>
           <p className="eyebrow"><span /> TEAM ACCESS</p>
           <h1 className="page-title">Staff</h1>
-          <p className="page-intro">Manage local accounts and the role assigned to each person.</p>
+          <p className="page-intro">
+            {readOnly
+              ? "View staff assigned to your properties."
+              : "Manage local accounts, property assignments, and staff roles."}
+          </p>
         </div>
-        <button className="button button-primary" onClick={() => edit()}>Add staff account</button>
+        {!readOnly && (
+          <button className="button button-primary" onClick={() => edit()}>Add staff account</button>
+        )}
       </div>
 
       {error && <ErrorState message={error} />}
 
-      <section className="state-panel classroom-controls">
+      {readOnly && properties.length > 1 && (
+        <label className="form-field">
+          <span className="field-label">Property</span>
+          <select
+            value={selectedPropertyId}
+            onChange={(event) => setSelectedPropertyId(event.target.value)}
+          >
+            {properties.map((property) => (
+              <option key={property.id} value={property.id}>{property.name}</option>
+            ))}
+          </select>
+        </label>
+      )}
+
+      {!readOnly && <section className="state-panel classroom-controls">
         <div>
           <p className="eyebrow"><span /> INSTRUCTOR CONTROLS</p>
           <h2>Classroom recovery and reset</h2>
@@ -295,7 +328,7 @@ export function StaffPage({
             {classroomBusy ? "Working…" : "Restore baseline"}
           </button>
         </div>
-      </section>
+      </section>}
 
       {draft && (
         <form className="staff-form state-panel" onSubmit={submit}>
@@ -343,11 +376,11 @@ export function StaffPage({
                 ))}
               </select>
             </label>
-            {draft.role === "property_manager" && (
+            {draft.role !== "administrator" && (
               <fieldset className="form-field staff-property-assignments">
                 <legend className="field-label">Assigned properties</legend>
                 {properties.length === 0
-                  ? <span className="field-hint">Create an active property before assigning a manager.</span>
+                  ? <span className="field-hint">Create an active property before assigning staff.</span>
                   : properties.map((property) => (
                     <label className="staff-property-option" key={property.id}>
                       <input
@@ -403,6 +436,7 @@ export function StaffPage({
                 <th>Staff member</th>
                 <th>Username</th>
                 <th>Role</th>
+                <th>Property assignments</th>
                 <th>Status</th>
                 <th>Created</th>
                 <th>Updated</th>
@@ -415,6 +449,9 @@ export function StaffPage({
                   <td className="staff-name">{user.displayName}</td>
                   <td>{user.username}</td>
                   <td>{roleLabels[user.role]}</td>
+                  <td>{user.propertyIds?.map((id) =>
+                    properties.find((property) => property.id === id)?.name ?? `Property ${id}`,
+                  ).join(", ") || (user.role === "administrator" ? "All properties" : "Unassigned")}</td>
                   <td>
                     <span className={`staff-status ${user.isActive ? "active" : "inactive"}`}>
                       {user.isActive ? "Active" : "Inactive"}
@@ -423,21 +460,25 @@ export function StaffPage({
                   <td>{formatTimestamp(user.createdAt)}</td>
                   <td>{formatTimestamp(user.updatedAt)}</td>
                   <td className="staff-actions">
-                    <button className="button button-secondary" onClick={() => edit(user)}>
-                      Edit
-                    </button>
-                    <button
-                      className="button button-secondary"
-                      disabled={busyId === user.id || user.id === currentUserId}
-                      title={user.id === currentUserId ? "You cannot change your own active status." : undefined}
-                      onClick={() => void toggleActive(user)}
-                    >
-                      {busyId === user.id
-                        ? "Saving…"
-                        : user.isActive
-                          ? "Deactivate"
-                          : "Reactivate"}
-                    </button>
+                    {!readOnly && (
+                      <>
+                        <button className="button button-secondary" onClick={() => edit(user)}>
+                          Edit
+                        </button>
+                        <button
+                          className="button button-secondary"
+                          disabled={busyId === user.id || user.id === currentUserId}
+                          title={user.id === currentUserId ? "You cannot change your own active status." : undefined}
+                          onClick={() => void toggleActive(user)}
+                        >
+                          {busyId === user.id
+                            ? "Saving…"
+                            : user.isActive
+                              ? "Deactivate"
+                              : "Reactivate"}
+                        </button>
+                      </>
+                    )}
                   </td>
                 </tr>
               ))}

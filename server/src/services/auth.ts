@@ -203,8 +203,10 @@ export function createSession(
     INSERT INTO auth_sessions (token_hash, staff_id, csrf_token_hash, expires_at)
     VALUES (?, ?, ?, ?)
   `).run(hashToken(token), staffId, hashToken(csrfToken), expiresAt);
+  const user = toStaffUser(row);
+  user.propertyIds = staffPropertyIds(database, staffId);
   return {
-    user: toStaffUser(row),
+    user,
     token,
     csrfToken,
     expiresAt,
@@ -229,8 +231,10 @@ export function attachAuthenticatedStaff(database: PmsDatabase): RequestHandler 
       WHERE s.token_hash = ? AND s.expires_at > ? AND a.is_active = 1
     `).get(hashToken(token), new Date().toISOString());
     if (row) {
+      const user = toStaffUser(row);
+      user.propertyIds = staffPropertyIds(database, user.id);
       request.auth = {
-        ...toStaffUser(row),
+        ...user,
         tokenHash: stringValue(row.token_hash),
         csrfTokenHash: stringValue(row.csrf_token_hash),
       };
@@ -296,19 +300,37 @@ export function assertCsrf(request: Request): void {
   }
 }
 
-export function listStaff(database: PmsDatabase): StaffUser[] {
+export function listStaff(
+  database: PmsDatabase,
+  propertyScope?: number[],
+): StaffUser[] {
+  const propertyFilter = propertyScope === undefined
+    ? ""
+    : propertyScope.length
+      ? `WHERE EXISTS (
+          SELECT 1 FROM staff_property_assignments visible
+          WHERE visible.staff_id = a.id
+            AND visible.property_id IN (${propertyScope.map(() => "?").join(", ")})
+        )`
+      : "WHERE 0 = 1";
   const users = database.$client.prepare(`
     SELECT a.id, a.display_name, a.username,
       CASE WHEN x.staff_id IS NOT NULL THEN 'property_manager' ELSE a.role END AS role,
       a.is_active, a.created_at, a.updated_at
     FROM staff_accounts a
     LEFT JOIN staff_role_extensions x ON x.staff_id = a.id
+    ${propertyFilter}
     ORDER BY a.display_name COLLATE NOCASE, a.id
-  `).all().map(toStaffUser);
+  `).all(...(propertyScope ?? [])).map(toStaffUser);
   const assignments = database.$client.prepare(`
-    SELECT staff_id, property_id FROM property_manager_properties
+    SELECT staff_id, property_id FROM staff_property_assignments
+    ${propertyScope === undefined
+      ? ""
+      : propertyScope.length
+        ? `WHERE property_id IN (${propertyScope.map(() => "?").join(", ")})`
+        : "WHERE 0 = 1"}
     ORDER BY staff_id, property_id
-  `).all();
+  `).all(...(propertyScope ?? []));
   const propertyIds = new Map<number, number[]>();
   for (const row of assignments) {
     const staffId = integerValue(row.staff_id);
@@ -336,7 +358,7 @@ export async function createStaff(
   const client = database.$client;
   client.exec("BEGIN IMMEDIATE");
   try {
-    validatePropertyManagerAssignments(client, input.role, input.propertyIds);
+    validateStaffPropertyAssignments(client, input.role, input.propertyIds);
     const result = client.prepare(`
       INSERT INTO staff_accounts (display_name, username, password_hash, role)
       VALUES (?, ?, ?, ?)
@@ -347,7 +369,7 @@ export async function createStaff(
       input.role === "property_manager" ? "front_desk" : input.role,
     );
     const staffId = Number(result.lastInsertRowid);
-    savePropertyManagerAssignments(client, staffId, input.role, input.propertyIds);
+    saveStaffPropertyAssignments(client, staffId, input.role, input.propertyIds);
     client.exec("COMMIT");
     return getStaff(database, staffId);
   } catch (error) {
@@ -380,7 +402,7 @@ export async function updateStaff(
     `).get(id);
     if (!existing) throw new HttpError(404, "Staff account not found.");
     const nextRole = input.role;
-    validatePropertyManagerAssignments(client, nextRole, input.propertyIds);
+    validateStaffPropertyAssignments(client, nextRole, input.propertyIds);
     assertActiveAdministratorRemains(
       client,
       id,
@@ -399,7 +421,7 @@ export async function updateStaff(
       new Date().toISOString(),
       id,
     );
-    savePropertyManagerAssignments(client, id, nextRole, input.propertyIds);
+    saveStaffPropertyAssignments(client, id, nextRole, input.propertyIds);
     client.prepare("DELETE FROM auth_sessions WHERE staff_id = ?").run(id);
     client.exec("COMMIT");
   } catch (error) {
@@ -484,7 +506,7 @@ export function hasPermission(role: StaffRole, method: string, path: string): bo
     (method === "DELETE" && /^\/api\/properties\/[^/]+$|^\/api\/properties\/[^/]+\/units\/[^/]+$/.test(path));
   const isGuest =
     (isGet && /^\/api\/guests(?:\/[^/]+)?$/.test(path)) ||
-    (method === "POST" && /^\/api\/guests$|^\/api\/guests\/[^/]+\/(?:archive|restore)$/.test(path)) ||
+    (method === "POST" && /^\/api\/guests$|^\/api\/guests\/[^/]+\/(?:archive|restore|link)$/.test(path)) ||
     (method === "PATCH" && /^\/api\/guests\/[^/]+$/.test(path));
   const isReservation =
     (isGet && /^\/api\/reservations(?:\/availability|\/[^/]+)?$/.test(path)) ||
@@ -493,6 +515,8 @@ export function hasPermission(role: StaffRole, method: string, path: string): bo
     (method === "PATCH" && /^\/api\/reservations\/[^/]+\/status$/.test(path)) ||
     (method === "DELETE" && /^\/api\/reservations\/[^/]+$/.test(path));
   const isFrontDesk = isGet && path === "/api/front-desk";
+  const isReservationRead = isGet &&
+    /^\/api\/reservations(?:\/availability|\/[^/]+)?$/.test(path);
   const isHousekeepingRead = isGet && path === "/api/housekeeping";
   const isHousekeepingWrite = method === "PATCH" &&
     /^\/api\/housekeeping\/units\/[^/]+\/status$/.test(path);
@@ -535,7 +559,8 @@ export function hasPermission(role: StaffRole, method: string, path: string): bo
     case "administrator":
       return true;
     case "property_manager":
-      return isTaskRead || isTaskCreate || isTaskEdit || isTaskStatus ||
+      return isPropertiesRead || isReservationRead || (isStaff && method === "GET") ||
+        isTaskRead || isTaskCreate || isTaskEdit || isTaskStatus ||
         isRoomCalendar || isManagerDashboard || isMaintenanceRead ||
         isMaintenanceCreate || isMaintenanceAdminWrite ||
         isHousekeepingRead || isHousekeepingWrite;
@@ -551,6 +576,7 @@ export function hasPermission(role: StaffRole, method: string, path: string): bo
         isTaskStatus;
     case "accounting":
       return (
+        isPropertiesRead ||
         isInvoiceRead ||
         isInvoiceWrite ||
         isReport ||
@@ -593,10 +619,20 @@ function getStaff(database: PmsDatabase, id: number): StaffUser {
   if (!row) throw new HttpError(404, "Staff account not found.");
   const user = toStaffUser(row);
   user.propertyIds = database.$client.prepare(`
-    SELECT property_id FROM property_manager_properties
+    SELECT property_id FROM staff_property_assignments
     WHERE staff_id = ? ORDER BY property_id
   `).all(id).map((assignment) => integerValue(assignment.property_id));
   return user;
+}
+
+function staffPropertyIds(database: PmsDatabase, staffId: number): number[] {
+  return database.$client.prepare(`
+    SELECT a.property_id
+    FROM staff_property_assignments a
+    JOIN properties p ON p.id = a.property_id
+    WHERE a.staff_id = ? AND p.status = 'active'
+    ORDER BY a.property_id
+  `).all(staffId).map((assignment) => integerValue(assignment.property_id));
 }
 
 function toStaffUser(row: Record<string, unknown>): StaffUser {
@@ -616,19 +652,19 @@ function toStaffUser(row: Record<string, unknown>): StaffUser {
   };
 }
 
-function validatePropertyManagerAssignments(
+function validateStaffPropertyAssignments(
   client: DatabaseSync,
   role: StaffRole,
   propertyIds: number[],
 ): void {
-  if (role !== "property_manager") {
+  if (role === "administrator") {
     if (propertyIds.length > 0) {
-      throw new HttpError(400, "Only property managers can be assigned properties.");
+      throw new HttpError(400, "Administrators have global access and cannot be property-scoped.");
     }
     return;
   }
   if (propertyIds.length === 0 || new Set(propertyIds).size !== propertyIds.length) {
-    throw new HttpError(400, "A property manager must be assigned at least one unique property.");
+    throw new HttpError(400, "Each non-administrator must be assigned at least one unique property.");
   }
   const placeholders = propertyIds.map(() => "?").join(", ");
   const count = integerValue(client.prepare(`
@@ -640,20 +676,26 @@ function validatePropertyManagerAssignments(
   }
 }
 
-function savePropertyManagerAssignments(
+function saveStaffPropertyAssignments(
   client: DatabaseSync,
   staffId: number,
   role: StaffRole,
   propertyIds: number[],
 ): void {
+  client.prepare("DELETE FROM staff_property_assignments WHERE staff_id = ?").run(staffId);
   client.prepare("DELETE FROM property_manager_properties WHERE staff_id = ?").run(staffId);
   client.prepare("DELETE FROM staff_role_extensions WHERE staff_id = ?").run(staffId);
-  if (role !== "property_manager") return;
-  client.prepare(`
-    INSERT INTO staff_role_extensions (staff_id, role) VALUES (?, 'property_manager')
-  `).run(staffId);
+  if (role === "property_manager") {
+    client.prepare(`
+      INSERT INTO staff_role_extensions (staff_id, role) VALUES (?, 'property_manager')
+    `).run(staffId);
+    const managerInsert = client.prepare(`
+      INSERT INTO property_manager_properties (staff_id, property_id) VALUES (?, ?)
+    `);
+    for (const propertyId of propertyIds) managerInsert.run(staffId, propertyId);
+  }
   const insert = client.prepare(`
-    INSERT INTO property_manager_properties (staff_id, property_id) VALUES (?, ?)
+    INSERT INTO staff_property_assignments (staff_id, property_id) VALUES (?, ?)
   `);
   for (const propertyId of propertyIds) insert.run(staffId, propertyId);
 }

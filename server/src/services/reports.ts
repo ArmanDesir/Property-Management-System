@@ -12,8 +12,10 @@ export function getReportSummary(database: PmsDatabase, filters: ReportFilters) 
   const propertyCondition = filters.propertyId === null ? "" : " AND id = ?";
   const propertyParameters = filters.propertyId === null ? [] : [filters.propertyId];
   const properties = database.$client.prepare(`
-    SELECT id, name, status FROM properties ORDER BY name COLLATE NOCASE, id
-  `).all();
+    SELECT id, name, status FROM properties
+    ${filters.propertyId === null ? "" : "WHERE id = ?"}
+    ORDER BY name COLLATE NOCASE, id
+  `).all(...propertyParameters);
   const counts = database.$client.prepare(`
     SELECT
       (SELECT COUNT(*) FROM properties WHERE status = 'active'

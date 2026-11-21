@@ -1,7 +1,7 @@
 {
   "name": "local-pms",
   "private": true,
-  "version": "2.1.0",
+  "version": "3.0.0",
   "description": "Local-first hotel property management system",
   "author": "ZCSMST",
   "main": "desktop/main.cjs",

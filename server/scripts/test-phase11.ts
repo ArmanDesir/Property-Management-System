@@ -77,18 +77,21 @@ try {
     username: "phase11-front-desk",
     role: "front_desk",
     password: "synthetic-phase11-frontdesk-password",
+    propertyIds: [propertyOneId, propertyTwoId],
   });
   const housekeepingCreated = await admin("/staff", "POST", {
     displayName: "Synthetic Phase 11 Housekeeping",
     username: "phase11-housekeeping",
     role: "housekeeping",
     password: "synthetic-phase11-housekeeping-password",
+    propertyIds: [propertyOneId],
   });
   const accountingCreated = await admin("/staff", "POST", {
     displayName: "Synthetic Phase 11 Accounting",
     username: "phase11-accounting",
     role: "accounting",
     password: "synthetic-phase11-accounting-password",
+    propertyIds: [propertyOneId],
   });
   const managerCreated = await admin("/staff", "POST", {
     displayName: "Synthetic Phase 11 Manager",
@@ -334,8 +337,20 @@ try {
 
   const manager = await createTestApiClient(baseUrl, false);
   assert.equal((await manager.login("phase11-manager", "synthetic-phase11-manager-password")).status, 200);
-  assert.equal((await manager("/properties")).status, 403);
-  assert.equal((await manager("/staff")).status, 403);
+  const managerProperties = await manager("/properties");
+  assert.equal(managerProperties.status, 200);
+  assert.deepEqual(
+    managerProperties.data.properties.map((property: { id: number }) => property.id),
+    [propertyOneId],
+  );
+  const managerStaff = await manager("/staff");
+  assert.equal(managerStaff.status, 200);
+  assert.equal(
+    managerStaff.data.staff.some((user: { id: number }) =>
+      user.id === resortManagerCreated.data.staff.id,
+    ),
+    false,
+  );
   assert.equal((await manager("/reports/summary?from=2032-01-10&to=2032-01-10")).status, 403);
 
   const calendarProperties = await manager("/room-availability/properties");

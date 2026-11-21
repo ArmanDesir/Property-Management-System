@@ -10,6 +10,8 @@ import {
   getReservationReport,
   type ReportFilters,
 } from "../services/reports.js";
+import type { AuthenticatedStaff } from "../services/auth.js";
+import { assertPropertyAccess } from "../services/property-access.js";
 
 export function createReportsRouter(database: PmsDatabase): Router {
   const router = Router();
@@ -17,31 +19,41 @@ export function createReportsRouter(database: PmsDatabase): Router {
   router.get(
     "/summary",
     asyncHandler(async (request, response) => {
-      response.json({ report: getReportSummary(database, parseFilters(database, request.query)) });
+      response.json({
+        report: getReportSummary(database, parseFilters(database, request.query, request.auth)),
+      });
     }),
   );
   router.get(
     "/reservations",
     asyncHandler(async (request, response) => {
-      response.json({ report: getReservationReport(database, parseFilters(database, request.query)) });
+      response.json({
+        report: getReservationReport(database, parseFilters(database, request.query, request.auth)),
+      });
     }),
   );
   router.get(
     "/occupancy",
     asyncHandler(async (request, response) => {
-      response.json({ report: getOccupancyReport(database, parseFilters(database, request.query)) });
+      response.json({
+        report: getOccupancyReport(database, parseFilters(database, request.query, request.auth)),
+      });
     }),
   );
   router.get(
     "/housekeeping",
     asyncHandler(async (request, response) => {
-      response.json({ report: getHousekeepingReport(database, parseFilters(database, request.query)) });
+      response.json({
+        report: getHousekeepingReport(database, parseFilters(database, request.query, request.auth)),
+      });
     }),
   );
   router.get(
     "/billing",
     asyncHandler(async (request, response) => {
-      response.json({ report: getBillingReport(database, parseFilters(database, request.query)) });
+      response.json({
+        report: getBillingReport(database, parseFilters(database, request.query, request.auth)),
+      });
     }),
   );
 
@@ -51,6 +63,7 @@ export function createReportsRouter(database: PmsDatabase): Router {
 function parseFilters(
   database: PmsDatabase,
   query: Record<string, unknown>,
+  actor: AuthenticatedStaff | undefined,
 ): ReportFilters {
   const from = parseDate(queryValue(query.from, "Start date"), "Start date");
   const to = parseDate(queryValue(query.to, "End date"), "End date");
@@ -62,7 +75,12 @@ function parseFilters(
   const propertyId = query.propertyId === undefined
     ? null
     : parseRecordId(queryValue(query.propertyId, "Property ID"));
+  if (!actor) throw new HttpError(401, "Sign in to access this resource.");
+  if (propertyId === null && actor.role !== "administrator") {
+    throw new HttpError(400, "Select a property to view its reports.");
+  }
   if (propertyId !== null) {
+    assertPropertyAccess(actor, propertyId);
     const property = database.$client.prepare("SELECT id FROM properties WHERE id = ?").get(propertyId);
     if (!property) throw new HttpError(404, "Property not found.");
   }

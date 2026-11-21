@@ -389,7 +389,7 @@ try {
     });
     assert.equal(
       prePhase5Database.$client.prepare("SELECT COUNT(*) AS count FROM __drizzle_migrations").get()?.count,
-      11,
+      12,
     );
     assert.equal(
       prePhase5Database.$client.prepare("SELECT COUNT(*) AS count FROM invoices").get()?.count,
@@ -523,6 +523,8 @@ try {
       housekeeping_tasks: 1,
       staff_accounts: 1,
       auth_sessions: 1,
+      staff_property_assignments: 0,
+      guest_property_access: 1,
       maintenance_requests: 0,
       maintenance_history: 0,
     };

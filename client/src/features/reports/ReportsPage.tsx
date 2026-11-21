@@ -1,4 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { apiRequest } from "../../lib/api";
+import type { StaffUser } from "../auth/AuthPage";
 import {
   fetchReports,
   formatCents,
@@ -8,17 +10,64 @@ import "./Reports.css";
 
 type RangePreset = "today" | "7days" | "30days" | "month" | "custom";
 
-export function ReportsPage({ navigate }: { navigate: (path: string) => void }) {
+export function ReportsPage({
+  navigate,
+  role,
+}: { navigate: (path: string) => void; role: StaffUser["role"] }) {
   const [from, setFrom] = useState(() => shiftDate(localDate(), -29));
   const [to, setTo] = useState(localDate);
   const [preset, setPreset] = useState<RangePreset>("30days");
   const [propertyId, setPropertyId] = useState("");
+  const [properties, setProperties] = useState<Array<{
+    id: number;
+    name: string;
+    status: string;
+  }>>([]);
+  const [propertiesLoading, setPropertiesLoading] = useState(true);
   const [data, setData] = useState<ReportsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
+    let active = true;
+    apiRequest<{ properties: Array<{ id: number; name: string; status: string }> }>(
+      "/properties?includeArchived=true",
+    )
+      .then(({ properties: result }) => {
+        if (!active) return;
+        setProperties(result);
+        if (role !== "administrator" && result.length > 0) {
+          setPropertyId(String(result[0].id));
+        }
+      })
+      .catch((requestError: unknown) => {
+        if (active) {
+          setError(
+            requestError instanceof Error ? requestError.message : "Could not load properties.",
+          );
+        }
+      })
+      .finally(() => {
+        if (active) setPropertiesLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [role]);
+
+  useEffect(() => {
+    if (role !== "administrator" && propertiesLoading) return;
+    if (role !== "administrator" && !propertyId) {
+      setData(null);
+      setError((current) =>
+        current || (properties.length === 0
+          ? "No assigned properties are available for reporting."
+          : ""),
+      );
+      setLoading(false);
+      return;
+    }
     let active = true;
     setLoading(true);
     setError("");
@@ -42,7 +91,7 @@ export function ReportsPage({ navigate }: { navigate: (path: string) => void }) 
     return () => {
       active = false;
     };
-  }, [from, to, propertyId, refreshKey]);
+  }, [from, to, propertyId, propertiesLoading, properties.length, refreshKey, role]);
 
   const choosePreset = (next: RangePreset) => {
     setPreset(next);
@@ -55,7 +104,7 @@ export function ReportsPage({ navigate }: { navigate: (path: string) => void }) 
   };
 
   const summary = data?.summary;
-  const properties = summary?.properties ?? [];
+  const reportProperties = properties.length ? properties : summary?.properties ?? [];
 
   return (
     <section className="page-section reports-page">
@@ -135,8 +184,8 @@ export function ReportsPage({ navigate }: { navigate: (path: string) => void }) 
         <label className="report-filter-field report-property-filter">
           <span>Property</span>
           <select value={propertyId} onChange={(event) => setPropertyId(event.target.value)}>
-            <option value="">All properties</option>
-            {properties.map((property) => (
+            {role === "administrator" && <option value="">All properties</option>}
+            {reportProperties.map((property) => (
               <option key={property.id} value={property.id}>
                 {property.name}{property.status === "archived" ? " (archived)" : ""}
               </option>

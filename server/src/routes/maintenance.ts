@@ -22,6 +22,7 @@ import {
   type MaintenanceDraft,
   type MaintenanceFilters,
 } from "../services/maintenance.js";
+import { listStaff } from "../services/auth.js";
 
 export function createMaintenanceRouter(database: PmsDatabase): Router {
   const router = Router();
@@ -59,10 +60,14 @@ export function createMaintenanceRouter(database: PmsDatabase): Router {
     `).all(...(propertyIds ?? []));
     const staff = request.auth?.role === "administrator" ||
         request.auth?.role === "property_manager"
-      ? database.$client.prepare(`
-        SELECT id, display_name FROM staff_accounts
-        WHERE is_active = 1 ORDER BY display_name COLLATE NOCASE, id
-      `).all()
+      ? listStaff(database, propertyIds)
+        .filter((user) => user.isActive)
+        .map((user) => ({
+          id: user.id,
+          displayName: user.displayName,
+          role: user.role,
+          propertyIds: user.propertyIds,
+        }))
       : [];
     response.json({
       properties: properties.map((row) => ({
@@ -75,10 +80,7 @@ export function createMaintenanceRouter(database: PmsDatabase): Router {
         name: row.name,
         unitType: row.unit_type,
       })),
-      staff: staff.map((row) => ({
-        id: Number(row.id),
-        displayName: row.display_name,
-      })),
+      staff,
     });
   });
 
@@ -253,7 +255,7 @@ function managerPropertyIds(
   if (request.auth?.role !== "property_manager") return undefined;
   return database.$client.prepare(`
     SELECT a.property_id
-    FROM property_manager_properties a
+    FROM staff_property_assignments a
     JOIN properties p ON p.id = a.property_id
     WHERE a.staff_id = ? AND p.status = 'active'
     ORDER BY a.property_id

@@ -25,6 +25,13 @@ import {
   checkInReservation,
   checkOutReservation,
 } from "../services/front-desk.js";
+import {
+  allowedPropertyIds,
+  assertGuestPropertyAccess,
+  assertPropertyAccess,
+  assertReservationPropertyAccess,
+  unitPropertyId,
+} from "../services/property-access.js";
 
 const reservationStatuses = ["pending", "confirmed", "cancelled", "completed"] as const;
 const editableFields = new Set([
@@ -56,6 +63,8 @@ export function createReservationsRouter(database: PmsDatabase): Router {
       const excludeReservationId = request.query.excludeReservationId === undefined
         ? null
         : parseRecordId(singleQuery(request.query.excludeReservationId, "Reservation ID"));
+      if (!request.auth) throw new HttpError(401, "Sign in to access this resource.");
+      assertPropertyAccess(request.auth, unitPropertyId(database, unitId));
 
       const quote = getAvailabilityQuote(
         database,
@@ -76,8 +85,14 @@ export function createReservationsRouter(database: PmsDatabase): Router {
   router.get(
     "/",
     asyncHandler(async (request, response) => {
+      if (!request.auth) throw new HttpError(401, "Sign in to access this resource.");
+      const filters = parseFilters(request.query);
+      if (filters.propertyId !== null) assertPropertyAccess(request.auth, filters.propertyId);
       response.json({
-        ...listReservations(database, parseFilters(request.query)),
+        ...listReservations(database, {
+          ...filters,
+          propertyIds: allowedPropertyIds(request.auth),
+        }),
       });
     }),
   );
@@ -87,6 +102,10 @@ export function createReservationsRouter(database: PmsDatabase): Router {
     asyncHandler(async (request, response) => {
       const draft = parseDraft(request.body);
       const dates = parseDateRange(draft.checkIn, draft.checkOut);
+      if (!request.auth) throw new HttpError(401, "Sign in to access this resource.");
+      const propertyId = unitPropertyId(database, draft.unitId);
+      assertPropertyAccess(request.auth, propertyId);
+      assertGuestPropertyAccess(database, request.auth, draft.guestId, propertyId);
       const reservation = createReservation(database, draft, dates.nights);
       response.status(201).json({ reservation });
     }),
@@ -96,6 +115,8 @@ export function createReservationsRouter(database: PmsDatabase): Router {
     "/:reservationId",
     asyncHandler(async (request, response) => {
       const id = parseRecordId(request.params.reservationId);
+      if (!request.auth) throw new HttpError(401, "Sign in to access this resource.");
+      assertReservationPropertyAccess(database, request.auth, id);
       response.json({ reservation: getReservation(database, id) });
     }),
   );
@@ -106,6 +127,11 @@ export function createReservationsRouter(database: PmsDatabase): Router {
       const id = parseRecordId(request.params.reservationId);
       const draft = parseDraft(request.body);
       const dates = parseDateRange(draft.checkIn, draft.checkOut);
+      if (!request.auth) throw new HttpError(401, "Sign in to access this resource.");
+      assertReservationPropertyAccess(database, request.auth, id);
+      const propertyId = unitPropertyId(database, draft.unitId);
+      assertPropertyAccess(request.auth, propertyId);
+      assertGuestPropertyAccess(database, request.auth, draft.guestId, propertyId);
       response.json({
         reservation: updateReservation(database, id, draft, dates.nights),
       });
@@ -116,6 +142,8 @@ export function createReservationsRouter(database: PmsDatabase): Router {
     "/:reservationId/status",
     asyncHandler(async (request, response) => {
       const id = parseRecordId(request.params.reservationId);
+      if (!request.auth) throw new HttpError(401, "Sign in to access this resource.");
+      assertReservationPropertyAccess(database, request.auth, id);
       const body = requireObject(request.body);
       if (Object.keys(body).some((field) => field !== "status")) {
         throw new HttpError(400, "Only the reservation status can be changed here.");
@@ -133,6 +161,8 @@ export function createReservationsRouter(database: PmsDatabase): Router {
     "/:reservationId",
     asyncHandler(async (request, response) => {
       const id = parseRecordId(request.params.reservationId);
+      if (!request.auth) throw new HttpError(401, "Sign in to access this resource.");
+      assertReservationPropertyAccess(database, request.auth, id);
       response.json({
         reservation: transitionReservation(database, id, "cancelled"),
       });
@@ -143,6 +173,8 @@ export function createReservationsRouter(database: PmsDatabase): Router {
     "/:reservationId/check-in",
     asyncHandler(async (request, response) => {
       const id = parseRecordId(request.params.reservationId);
+      if (!request.auth) throw new HttpError(401, "Sign in to access this resource.");
+      assertReservationPropertyAccess(database, request.auth, id);
       const reservation = checkInReservation(database, id);
       response.json({ message: "Guest checked in successfully.", reservation });
     }),
@@ -152,6 +184,8 @@ export function createReservationsRouter(database: PmsDatabase): Router {
     "/:reservationId/check-out",
     asyncHandler(async (request, response) => {
       const id = parseRecordId(request.params.reservationId);
+      if (!request.auth) throw new HttpError(401, "Sign in to access this resource.");
+      assertReservationPropertyAccess(database, request.auth, id);
       const reservation = checkOutReservation(database, id);
       response.json({
         message: "Guest checked out. The unit remains in its current operational status.",

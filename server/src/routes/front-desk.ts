@@ -5,6 +5,7 @@ import {
   listFrontDesk,
 } from "../services/front-desk.js";
 import { parseRecordId } from "../services/validation.js";
+import { allowedPropertyIds, assertPropertyAccess } from "../services/property-access.js";
 
 export function createFrontDeskRouter(database: PmsDatabase): Router {
   const router = Router();
@@ -18,7 +19,16 @@ export function createFrontDeskRouter(database: PmsDatabase): Router {
       const propertyId = request.query.propertyId === undefined
         ? undefined
         : parseRecordId(request.query.propertyId);
-      response.json({ frontDesk: listFrontDesk(database, date, propertyId) });
+      if (!request.auth) throw new HttpError(401, "Sign in to access this resource.");
+      if (propertyId !== undefined) assertPropertyAccess(request.auth, propertyId);
+      response.json({
+        frontDesk: listFrontDesk(
+          database,
+          date,
+          propertyId,
+          allowedPropertyIds(request.auth),
+        ),
+      });
     }),
   );
 

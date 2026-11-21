@@ -97,6 +97,7 @@ try {
     username: "student-demo",
     role: "front_desk",
     password: "admin123",
+    propertyIds: [studentProperty.data.property.id],
   });
   assert.equal(studentAccount.status, 201);
 

@@ -79,6 +79,7 @@ export interface InvoiceFilters {
   status: InvoiceStatus | "all";
   search: string;
   reservationId: number | null;
+  propertyIds?: number[];
   limit: number;
   offset: number;
 }
@@ -114,8 +115,17 @@ const invoiceSelect = `
   JOIN properties p ON p.id = r.property_id
   LEFT JOIN units u ON u.id = r.unit_id`;
 
-export function listInvoiceReservations(database: PmsDatabase, search: string) {
+export function listInvoiceReservations(
+  database: PmsDatabase,
+  search: string,
+  propertyIds?: number[],
+) {
   const pattern = `%${search}%`;
+  const propertyScope = propertyIds === undefined
+    ? ""
+    : propertyIds.length
+      ? `AND r.property_id IN (${propertyIds.map(() => "?").join(", ")})`
+      : "AND 0 = 1";
   const rows = database.$client.prepare(`
     SELECT r.id, r.reservation_reference, r.guest_id,
       g.first_name || ' ' || g.last_name AS guest_name,
@@ -125,14 +135,15 @@ export function listInvoiceReservations(database: PmsDatabase, search: string) {
     JOIN guests g ON g.id = r.guest_id
     JOIN properties p ON p.id = r.property_id
     LEFT JOIN units u ON u.id = r.unit_id
-    WHERE ? = '%%'
+    WHERE (? = '%%'
       OR r.reservation_reference LIKE ?
       OR g.first_name || ' ' || g.last_name LIKE ?
       OR p.name LIKE ?
-      OR COALESCE(u.name, '') LIKE ?
+      OR COALESCE(u.name, '') LIKE ?)
+      ${propertyScope}
     ORDER BY r.created_at DESC, r.id DESC
     LIMIT 100
-  `).all(pattern, pattern, pattern, pattern, pattern);
+  `).all(pattern, pattern, pattern, pattern, pattern, ...(propertyIds ?? []));
 
   return rows.map(toReservationChoice);
 }
@@ -163,6 +174,14 @@ export function listInvoices(database: PmsDatabase, filters: InvoiceFilters) {
   if (filters.reservationId !== null) {
     conditions.push("i.reservation_id = ?");
     parameters.push(filters.reservationId);
+  }
+  if (filters.propertyIds !== undefined) {
+    if (filters.propertyIds.length === 0) {
+      conditions.push("0 = 1");
+    } else {
+      conditions.push(`r.property_id IN (${filters.propertyIds.map(() => "?").join(", ")})`);
+      parameters.push(...filters.propertyIds);
+    }
   }
   if (filters.search) {
     const pattern = `%${filters.search}%`;

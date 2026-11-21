@@ -1,4 +1,4 @@
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { Router } from "express";
 import type { PmsDatabase } from "../db/connection.js";
 import { properties } from "../db/schema.js";
@@ -15,6 +15,7 @@ import {
   timeValue,
 } from "../services/validation.js";
 import { createUnitsRouter } from "./units.js";
+import { allowedPropertyIds, assertPropertyAccess } from "../services/property-access.js";
 
 export function createPropertiesRouter(database: PmsDatabase): Router {
   const router = Router();
@@ -24,10 +25,20 @@ export function createPropertiesRouter(database: PmsDatabase): Router {
     "/",
     asyncHandler(async (request, response) => {
       const includeArchived = request.query.includeArchived === "true";
+      if (!request.auth) throw new HttpError(401, "Sign in to access this resource.");
+      const propertyIds = allowedPropertyIds(request.auth);
+      if (propertyIds !== undefined && propertyIds.length === 0) {
+        response.json({ properties: [] });
+        return;
+      }
+      const conditions = [
+        ...(includeArchived ? [] : [eq(properties.status, "active")]),
+        ...(propertyIds === undefined ? [] : [inArray(properties.id, propertyIds)]),
+      ];
       const records = await database
         .select()
         .from(properties)
-        .where(includeArchived ? undefined : eq(properties.status, "active"))
+        .where(conditions.length ? and(...conditions) : undefined)
         .orderBy(asc(properties.name))
         .all();
       response.json({ properties: records });
@@ -51,6 +62,8 @@ export function createPropertiesRouter(database: PmsDatabase): Router {
     "/:propertyId",
     asyncHandler(async (request, response) => {
       const propertyId = parseRecordId(request.params.propertyId);
+      if (!request.auth) throw new HttpError(401, "Sign in to access this resource.");
+      assertPropertyAccess(request.auth, propertyId);
       const record = await findProperty(database, propertyId);
       if (!record) throw new HttpError(404, "Property not found.");
       response.json({ property: record });

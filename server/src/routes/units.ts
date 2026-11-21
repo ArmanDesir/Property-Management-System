@@ -15,6 +15,7 @@ import {
   unitTypes,
 } from "../services/validation.js";
 import { withImmediateTransaction } from "../services/reservations.js";
+import { assertPropertyAccess } from "../services/property-access.js";
 
 const maximumBulkUnits = 500;
 
@@ -25,6 +26,8 @@ export function createUnitsRouter(database: PmsDatabase): Router {
     "/",
     asyncHandler(async (request, response) => {
       const propertyId = parseRecordId(request.params.propertyId);
+      if (!request.auth) throw new HttpError(401, "Sign in to access this resource.");
+      assertPropertyAccess(request.auth, propertyId);
       const [property] = await database
         .select({ id: properties.id })
         .from(properties)
@@ -50,6 +53,8 @@ export function createUnitsRouter(database: PmsDatabase): Router {
     "/",
     asyncHandler(async (request, response) => {
       const propertyId = parseRecordId(request.params.propertyId);
+      if (!request.auth) throw new HttpError(401, "Sign in to access this resource.");
+      assertPropertyAccess(request.auth, propertyId);
       const [property] = await database
         .select({ status: properties.status })
         .from(properties)
@@ -104,6 +109,8 @@ export function createUnitsRouter(database: PmsDatabase): Router {
     "/:unitId",
     asyncHandler(async (request, response) => {
       const { propertyId, unitId } = parseIds(request.params.propertyId, request.params.unitId);
+      if (!request.auth) throw new HttpError(401, "Sign in to access this resource.");
+      assertPropertyAccess(request.auth, propertyId);
       const record = await findUnit(database, propertyId, unitId);
       if (!record) throw new HttpError(404, "Unit not found in this property.");
       response.json({ unit: record });
@@ -114,6 +121,8 @@ export function createUnitsRouter(database: PmsDatabase): Router {
     "/:unitId",
     asyncHandler(async (request, response) => {
       const { propertyId, unitId } = parseIds(request.params.propertyId, request.params.unitId);
+      if (!request.auth) throw new HttpError(401, "Sign in to access this resource.");
+      assertPropertyAccess(request.auth, propertyId);
       const [property] = await database
         .select({ status: properties.status })
         .from(properties)
@@ -143,6 +152,8 @@ export function createUnitsRouter(database: PmsDatabase): Router {
     "/:unitId/status",
     asyncHandler(async (request, response) => {
       const { propertyId, unitId } = parseIds(request.params.propertyId, request.params.unitId);
+      if (!request.auth) throw new HttpError(401, "Sign in to access this resource.");
+      assertPropertyAccess(request.auth, propertyId);
       const [property] = await database
         .select({ status: properties.status })
         .from(properties)
@@ -175,6 +186,8 @@ export function createUnitsRouter(database: PmsDatabase): Router {
     "/:unitId",
     asyncHandler(async (request, response) => {
       const { propertyId, unitId } = parseIds(request.params.propertyId, request.params.unitId);
+      if (!request.auth) throw new HttpError(401, "Sign in to access this resource.");
+      assertPropertyAccess(request.auth, propertyId);
       const record = await findUnit(database, propertyId, unitId);
       if (!record) throw new HttpError(404, "Unit not found in this property.");
       if (record.archivedAt) {

@@ -154,12 +154,11 @@ export function updateHousekeepingStatus(
       throw new HttpError(404, "Active unit not found.");
     }
 
-    if (actor.role === "property_manager") {
-      const assigned = client.prepare(`
-        SELECT 1 FROM property_manager_properties
-        WHERE staff_id = ? AND property_id = ?
-      `).get(actor.id, existing.property_id);
-      if (!assigned) throw new HttpError(404, "Active unit not found.");
+    if (
+      actor.role !== "administrator" &&
+      !actor.propertyIds.includes(integerValue(existing.property_id))
+    ) {
+      throw new HttpError(404, "Active unit not found.");
     }
 
     const currentStatus = housekeepingStatusValue(existing.housekeeping_status);

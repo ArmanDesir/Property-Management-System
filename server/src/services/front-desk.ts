@@ -40,6 +40,7 @@ export function listFrontDesk(
   database: PmsDatabase,
   date: string,
   propertyId?: number,
+  allowedPropertyIds?: number[],
 ): FrontDeskDashboard {
   if (
     propertyId !== undefined &&
@@ -47,8 +48,16 @@ export function listFrontDesk(
   ) {
     throw new HttpError(404, "Property not found.");
   }
-  const propertyFilter = propertyId === undefined ? "" : " AND r.property_id = ?";
-  const propertyParameter = propertyId === undefined ? [] : [String(propertyId)];
+  const propertyFilter = propertyId !== undefined
+    ? " AND r.property_id = ?"
+    : allowedPropertyIds === undefined
+      ? ""
+      : allowedPropertyIds.length
+        ? ` AND r.property_id IN (${allowedPropertyIds.map(() => "?").join(", ")})`
+        : " AND 0 = 1";
+  const propertyParameter = propertyId !== undefined
+    ? [String(propertyId)]
+    : (allowedPropertyIds ?? []).map(String);
   const arrivals = queryReservations(database, `
     r.lifecycle_status = 'confirmed'
     AND r.stay_status = 'not_checked_in'
@@ -77,8 +86,14 @@ export function listFrontDesk(
   return {
     date,
     properties: database.$client.prepare(`
-      SELECT id, name, status FROM properties ORDER BY name COLLATE NOCASE, id
-    `).all().map((property) => ({
+      SELECT id, name, status FROM properties
+      ${allowedPropertyIds === undefined
+        ? ""
+        : allowedPropertyIds.length
+          ? `WHERE id IN (${allowedPropertyIds.map(() => "?").join(", ")})`
+          : "WHERE 0 = 1"}
+      ORDER BY name COLLATE NOCASE, id
+    `).all(...(allowedPropertyIds ?? [])).map((property) => ({
       id: Number(property.id),
       name: textValue(property.name),
       status: textValue(property.status),

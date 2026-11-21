@@ -12,6 +12,7 @@ import {
   type HousekeepingUnit,
   type HousekeepingStatus,
 } from "../services/housekeeping.js";
+import { allowedPropertyIds } from "../services/property-access.js";
 
 const housekeepingStatuses = ["dirty", "cleaning", "clean"] as const;
 type HousekeepingUnitWithoutGuestDetails =
@@ -35,10 +36,8 @@ export function createHousekeepingRouter(database: PmsDatabase): Router {
         ? "all"
         : queryStatus(request.query.status);
       if (!request.auth) throw new HttpError(401, "Sign in to access this resource.");
-      const allowedPropertyIds = request.auth.role === "property_manager"
-        ? managerPropertyIds(database, request.auth.id)
-        : undefined;
-      const overview = listHousekeeping(database, propertyId, status, allowedPropertyIds);
+      const propertyScope = allowedPropertyIds(request.auth);
+      const overview = listHousekeeping(database, propertyId, status, propertyScope);
       if (
         request.auth.role === "housekeeping" ||
         request.auth.role === "property_manager"
@@ -90,16 +89,6 @@ function hideGuestDetails(unit: HousekeepingUnit): HousekeepingUnitWithoutGuestD
       }
       : null,
   };
-}
-
-function managerPropertyIds(database: PmsDatabase, staffId: number): number[] {
-  return database.$client.prepare(`
-    SELECT a.property_id
-    FROM property_manager_properties a
-    JOIN properties p ON p.id = a.property_id
-    WHERE a.staff_id = ? AND p.status = 'active'
-    ORDER BY a.property_id
-  `).all(staffId).map((row) => Number(row.property_id));
 }
 
 function queryStatus(value: unknown): HousekeepingStatus | "all" {

@@ -52,7 +52,7 @@ interface RequestDetail extends MaintenanceRequest {
 interface Options {
   properties: Array<{ id: number; name: string }>;
   units: Array<{ id: number; propertyId: number; name: string; unitType: string }>;
-  staff: Array<{ id: number; displayName: string }>;
+  staff: Array<{ id: number; displayName: string; role: Role; propertyIds: number[] }>;
 }
 
 interface Dashboard {
@@ -209,6 +209,12 @@ export function MaintenancePage({
   const availableUnits = useMemo(
     () => options.units.filter((unit) => String(unit.propertyId) === draft?.propertyId),
     [draft?.propertyId, options.units],
+  );
+  const availableStaff = useMemo(
+    () => options.staff.filter((staff) =>
+      staff.role === "administrator" || staff.propertyIds.includes(Number(draft?.propertyId)),
+    ),
+    [draft?.propertyId, options.staff],
   );
 
   const changeFilter = (key: keyof Filters, value: string | boolean) => {
@@ -498,7 +504,7 @@ export function MaintenancePage({
                   onChange={(event) => setDraft({ ...draft, assignedStaffId: event.target.value })}
                 >
                   <option value="">Unassigned</option>
-                  {options.staff.map((staff) => (
+                  {availableStaff.map((staff) => (
                     <option key={staff.id} value={staff.id}>{staff.displayName}</option>
                   ))}
                 </select>

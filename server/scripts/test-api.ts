@@ -345,23 +345,39 @@ try {
   const sharedEmailGuest = await request("/guests", "POST", {
     firstName: "Jordan",
     lastName: "Chen",
-    email: "family@example.test",
+    email: "jordan@example.test",
   });
   assert.equal(sharedEmailGuest.status, 201);
   const sharedPhoneGuest = await request("/guests", "POST", {
     firstName: "Morgan",
     lastName: "Ray",
-    phone: "+1 (555) 010-0200",
+    phone: "+1 (555) 010-0300",
   });
   assert.equal(sharedPhoneGuest.status, 201);
   assert.equal(sharedPhoneGuest.data.guest.email, null);
+  const exactEmailMatch = await request(
+    "/guests/match?email=FAMILY%40EXAMPLE.TEST",
+  );
+  assert.equal(exactEmailMatch.status, 200);
+  assert.equal(exactEmailMatch.data.guest.id, guestId);
+  const exactPhoneMatch = await request(
+    "/guests/match?phone=%2B1%20(555)%20010-0200",
+  );
+  assert.equal(exactPhoneMatch.status, 200);
+  assert.equal(exactPhoneMatch.data.guest.id, guestId);
+  const duplicateGuest = await request("/guests", "POST", {
+    firstName: "Duplicate",
+    lastName: "Profile",
+    email: "family@example.test",
+  });
+  assert.equal(duplicateGuest.status, 409);
 
   assert.equal((await request("/guests")).data.guests.length, 3);
   assert.equal("notes" in (await request("/guests")).data.guests[0], false);
   assert.equal((await request("/guests?status=all")).data.guests.length, 3);
   assert.equal((await request("/guests?status=active&q=avery")).data.guests.length, 1);
-  assert.equal((await request("/guests?status=all&q=FAMILY%40EXAMPLE.TEST")).data.guests.length, 2);
-  assert.equal((await request("/guests?status=all&q=010-0200")).data.guests.length, 2);
+  assert.equal((await request("/guests?status=all&q=FAMILY%40EXAMPLE.TEST")).data.guests.length, 1);
+  assert.equal((await request("/guests?status=all&q=010-0200")).data.guests.length, 1);
   assert.equal((await request("/guests/not-an-id")).status, 400);
   assert.equal((await request("/guests/999999")).status, 404);
   assert.equal((await request("/guests/999999", "PATCH", { firstName: "Missing" })).status, 404);

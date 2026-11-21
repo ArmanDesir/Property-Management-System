@@ -28,8 +28,10 @@ export type GuestListItem = Pick<
 export async function fetchGuests(
   status: GuestStatusFilter,
   search: string,
+  propertyId?: string,
 ): Promise<GuestListItem[]> {
   const params = new URLSearchParams({ status, q: search });
+  if (propertyId) params.set("propertyId", propertyId);
   const result = await apiRequest<{ guests: GuestListItem[] }>(`/guests?${params.toString()}`);
   return result.guests;
 }

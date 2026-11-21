@@ -23,6 +23,12 @@ import {
   type InvoiceStatus,
   type PaymentMethod,
 } from "../services/billing.js";
+import {
+  allowedPropertyIds,
+  assertPropertyAccess,
+  assertReservationPropertyAccess,
+} from "../services/property-access.js";
+import type { AuthenticatedStaff } from "../services/auth.js";
 
 const invoiceStatuses = ["draft", "issued", "partially_paid", "paid", "void"] as const;
 const paymentMethods = ["cash", "bank_transfer", "card_terminal", "other"] as const;
@@ -33,15 +39,25 @@ export function createInvoicesRouter(database: PmsDatabase): Router {
   router.get(
     "/reservations",
     asyncHandler(async (request, response) => {
-      response.json({ reservations: listInvoiceReservations(database, queryText(request.query.q)) });
+      if (!request.auth) throw new HttpError(401, "Sign in to access this resource.");
+      response.json({
+        reservations: listInvoiceReservations(
+          database,
+          queryText(request.query.q),
+          allowedPropertyIds(request.auth),
+        ),
+      });
     }),
   );
 
   router.get(
     "/reservations/:reservationId",
     asyncHandler(async (request, response) => {
+      if (!request.auth) throw new HttpError(401, "Sign in to access this resource.");
+      const reservationId = parseRecordId(request.params.reservationId);
+      assertReservationPropertyAccess(database, request.auth, reservationId);
       response.json({
-        reservation: getInvoiceReservation(database, parseRecordId(request.params.reservationId)),
+        reservation: getInvoiceReservation(database, reservationId),
       });
     }),
   );
@@ -55,11 +71,13 @@ export function createInvoicesRouter(database: PmsDatabase): Router {
       const reservationId = request.query.reservationId === undefined
         ? null
         : parseRecordId(singleQuery(request.query.reservationId, "Reservation ID"));
+      if (!request.auth) throw new HttpError(401, "Sign in to access this resource.");
       response.json({
         ...listInvoices(database, {
           status: status as InvoiceStatus | "all",
           search: queryText(request.query.q),
           reservationId,
+          propertyIds: allowedPropertyIds(request.auth),
           limit: queryInteger(request.query.limit, "Limit", 50, 1, 200),
           offset: queryInteger(request.query.offset, "Offset", 0, 0, 1_000_000),
         }),
@@ -71,6 +89,8 @@ export function createInvoicesRouter(database: PmsDatabase): Router {
     "/",
     asyncHandler(async (request, response) => {
       const draft = parseInvoiceDraft(request.body);
+      if (!request.auth) throw new HttpError(401, "Sign in to access this resource.");
+      assertReservationPropertyAccess(database, request.auth, draft.reservationId);
       response.status(201).json({ invoice: createInvoice(database, draft) });
     }),
   );
@@ -78,7 +98,10 @@ export function createInvoicesRouter(database: PmsDatabase): Router {
   router.get(
     "/:invoiceId",
     asyncHandler(async (request, response) => {
-      response.json({ invoice: getInvoice(database, parseRecordId(request.params.invoiceId)) });
+      if (!request.auth) throw new HttpError(401, "Sign in to access this resource.");
+      const id = parseRecordId(request.params.invoiceId);
+      assertInvoicePropertyAccess(database, request.auth, id);
+      response.json({ invoice: getInvoice(database, id) });
     }),
   );
 
@@ -86,21 +109,31 @@ export function createInvoicesRouter(database: PmsDatabase): Router {
     "/:invoiceId",
     asyncHandler(async (request, response) => {
       const id = parseRecordId(request.params.invoiceId);
-      response.json({ invoice: updateDraftInvoice(database, id, parseInvoiceDraft(request.body)) });
+      if (!request.auth) throw new HttpError(401, "Sign in to access this resource.");
+      assertInvoicePropertyAccess(database, request.auth, id);
+      const draft = parseInvoiceDraft(request.body);
+      assertReservationPropertyAccess(database, request.auth, draft.reservationId);
+      response.json({ invoice: updateDraftInvoice(database, id, draft) });
     }),
   );
 
   router.post(
     "/:invoiceId/issue",
     asyncHandler(async (request, response) => {
-      response.json({ invoice: issueInvoice(database, parseRecordId(request.params.invoiceId)) });
+      if (!request.auth) throw new HttpError(401, "Sign in to access this resource.");
+      const id = parseRecordId(request.params.invoiceId);
+      assertInvoicePropertyAccess(database, request.auth, id);
+      response.json({ invoice: issueInvoice(database, id) });
     }),
   );
 
   router.post(
     "/:invoiceId/void",
     asyncHandler(async (request, response) => {
-      response.json({ invoice: voidInvoice(database, parseRecordId(request.params.invoiceId)) });
+      if (!request.auth) throw new HttpError(401, "Sign in to access this resource.");
+      const id = parseRecordId(request.params.invoiceId);
+      assertInvoicePropertyAccess(database, request.auth, id);
+      response.json({ invoice: voidInvoice(database, id) });
     }),
   );
 
@@ -108,6 +141,8 @@ export function createInvoicesRouter(database: PmsDatabase): Router {
     "/:invoiceId/payments",
     asyncHandler(async (request, response) => {
       const id = parseRecordId(request.params.invoiceId);
+      if (!request.auth) throw new HttpError(401, "Sign in to access this resource.");
+      assertInvoicePropertyAccess(database, request.auth, id);
       const payment = parsePayment(request.body);
       const result = recordPayment(database, id, payment);
       response.status(result.duplicate ? 200 : 201).json(result);
@@ -115,6 +150,20 @@ export function createInvoicesRouter(database: PmsDatabase): Router {
   );
 
   return router;
+}
+
+function assertInvoicePropertyAccess(
+  database: PmsDatabase,
+  actor: AuthenticatedStaff,
+  invoiceId: number,
+): void {
+  const invoice = database.$client.prepare(`
+    SELECT r.property_id
+    FROM invoices i JOIN reservations r ON r.id = i.reservation_id
+    WHERE i.id = ?
+  `).get(invoiceId);
+  if (!invoice) throw new HttpError(404, "Invoice not found.");
+  assertPropertyAccess(actor, Number(invoice.property_id));
 }
 
 function parseInvoiceDraft(value: unknown): InvoiceDraft {

@@ -410,10 +410,16 @@ function validateReferences(client: DatabaseSync, draft: MaintenanceDraft): void
     }
   }
   if (draft.assignedStaffId !== null) {
-    const staff = client.prepare(
-      "SELECT id FROM staff_accounts WHERE id = ? AND is_active = 1",
-    ).get(draft.assignedStaffId);
-    if (!staff) throw new HttpError(400, "Assigned staff member must be active.");
+    const staff = client.prepare(`
+      SELECT a.id FROM staff_accounts a
+      LEFT JOIN staff_property_assignments assignment
+        ON assignment.staff_id = a.id AND assignment.property_id = ?
+      WHERE a.id = ? AND a.is_active = 1
+        AND (a.role = 'administrator' OR assignment.staff_id IS NOT NULL)
+    `).get(draft.propertyId, draft.assignedStaffId);
+    if (!staff) {
+      throw new HttpError(400, "Assigned staff member must be active and assigned to the selected property.");
+    }
   }
 }
 

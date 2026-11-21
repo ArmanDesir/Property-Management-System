@@ -23,7 +23,22 @@ import {
 export function createStaffRouter(database: PmsDatabase): Router {
   const router = Router();
 
-  router.get("/", (_request, response) => {
+  router.get("/", (request, response) => {
+    if (!request.auth) throw new HttpError(401, "Sign in to access this resource.");
+    if (request.auth.role === "property_manager") {
+      const propertyIdValue = request.query.propertyId;
+      const propertyId = propertyIdValue === undefined
+        ? undefined
+        : parseRecordId(propertyIdValue);
+      if (propertyId !== undefined && !request.auth.propertyIds.includes(propertyId)) {
+        throw new HttpError(404, "Property not found.");
+      }
+      const scope = propertyId === undefined
+        ? request.auth.propertyIds
+        : [propertyId];
+      response.json({ staff: listStaff(database, scope) });
+      return;
+    }
     response.json({ staff: listStaff(database) });
   });
 

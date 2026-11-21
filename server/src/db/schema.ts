@@ -390,6 +390,35 @@ export const propertyManagerProperties = sqliteTable(
   ],
 );
 
+export const staffPropertyAssignments = sqliteTable(
+  "staff_property_assignments",
+  {
+    staffId: integer("staff_id").notNull()
+      .references(() => staffAccounts.id, { onDelete: "cascade" }),
+    propertyId: integer("property_id").notNull()
+      .references(() => properties.id, { onDelete: "cascade" }),
+  },
+  (table) => [
+    uniqueIndex("staff_property_assignments_unique").on(table.staffId, table.propertyId),
+    index("staff_property_assignments_property").on(table.propertyId, table.staffId),
+  ],
+);
+
+export const guestPropertyAccess = sqliteTable(
+  "guest_property_access",
+  {
+    guestId: integer("guest_id").notNull()
+      .references(() => guests.id, { onDelete: "cascade" }),
+    propertyId: integer("property_id").notNull()
+      .references(() => properties.id, { onDelete: "cascade" }),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    uniqueIndex("guest_property_access_unique").on(table.guestId, table.propertyId),
+    index("guest_property_access_property_guest").on(table.propertyId, table.guestId),
+  ],
+);
+
 export const authSessions = sqliteTable(
   "auth_sessions",
   {

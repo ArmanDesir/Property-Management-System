@@ -1,4 +1,4 @@
-import { and, asc, eq, like, or, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, like, or, sql } from "drizzle-orm";
 import { Router } from "express";
 import type { PmsDatabase } from "../db/connection.js";
 import { guests } from "../db/schema.js";
@@ -10,6 +10,13 @@ import {
   requireObject,
   requiredText,
 } from "../services/validation.js";
+import {
+  assertGuestPropertyAccess,
+  assertPropertyAccess,
+  linkGuestToProperty,
+  selectedPropertyId,
+} from "../services/property-access.js";
+import { withImmediateTransaction } from "../services/reservations.js";
 
 const editableFields = new Set([
   "firstName",
@@ -26,12 +33,75 @@ export function createGuestsRouter(database: PmsDatabase): Router {
   const router = Router();
 
   router.get(
+    "/match",
+    asyncHandler(async (request, response) => {
+      if (!request.auth) throw new HttpError(401, "Sign in to access this resource.");
+      const propertyId = selectedPropertyId(request, request.auth);
+      if (!propertyId && request.auth.role !== "administrator") {
+        throw new HttpError(400, "Select a property to match this guest.");
+      }
+      const email = matchText(request.query.email, "Email");
+      const phone = matchText(request.query.phone, "Phone number");
+      if (!email && !phone) {
+        throw new HttpError(400, "Supply an exact email address or phone number.");
+      }
+      const matches = database.$client.prepare(`
+        SELECT id FROM guests
+        WHERE status = 'active' AND (
+          (? IS NOT NULL AND lower(email) = lower(?)) OR
+          (? IS NOT NULL AND phone = ?)
+        )
+        ORDER BY id LIMIT 2
+      `).all(email, email, phone, phone);
+      if (matches.length > 1) {
+        throw new HttpError(409, "More than one guest matches. Ask an administrator to resolve the duplicate profiles.");
+      }
+      if (matches.length === 0) {
+        response.json({ guest: null });
+        return;
+      }
+      const guestId = Number(matches[0].id);
+      const record = await findGuest(database, guestId);
+      response.json({
+        guest: record ? {
+          id: record.id,
+          firstName: record.firstName,
+          lastName: record.lastName,
+          email: record.email,
+          phone: record.phone,
+        } : null,
+      });
+    }),
+  );
+
+  router.get(
     "/",
     asyncHandler(async (request, response) => {
       const status = queryStatus(request.query.status);
       const search = queryText(request.query.q);
+      if (!request.auth) throw new HttpError(401, "Sign in to access this resource.");
+      const propertyId = selectedPropertyId(request, request.auth);
       const conditions = [];
       if (status !== "all") conditions.push(eq(guests.status, status));
+      if (request.auth.role !== "administrator") {
+        const propertyIds = propertyId === undefined
+          ? request.auth.propertyIds
+          : [propertyId];
+        if (propertyIds.length === 0) {
+          response.json({ guests: [] });
+          return;
+        }
+        const placeholders = propertyIds.map(() => "?").join(", ");
+        const accessibleGuests = database.$client.prepare(`
+          SELECT guest_id FROM guest_property_access
+          WHERE property_id IN (${placeholders})
+        `).all(...propertyIds).map((row) => Number(row.guest_id));
+        if (accessibleGuests.length === 0) {
+          response.json({ guests: [] });
+          return;
+        }
+        conditions.push(inArray(guests.id, [...new Set(accessibleGuests)]));
+      }
       if (search) {
         const pattern = `%${search}%`;
         conditions.push(or(
@@ -65,12 +135,89 @@ export function createGuestsRouter(database: PmsDatabase): Router {
     "/",
     asyncHandler(async (request, response) => {
       const input = parseGuestInput(request.body);
-      const [record] = await database
-        .insert(guests)
-        .values(input)
-        .returning()
-        .all();
+      if (!request.auth) throw new HttpError(401, "Sign in to access this resource.");
+      const propertyId = selectedPropertyId(request, request.auth);
+      if (request.auth.role !== "administrator" && propertyId === undefined) {
+        throw new HttpError(400, "Select a property before creating a guest profile.");
+      }
+      if (propertyId !== undefined) assertPropertyAccess(request.auth, propertyId);
+      const result = withImmediateTransaction(database, (client) => {
+        const existing = client.prepare(`
+          SELECT id FROM guests
+          WHERE status = 'active' AND (
+            (? IS NOT NULL AND lower(email) = lower(?)) OR
+            (? IS NOT NULL AND phone = ?)
+          )
+          ORDER BY id LIMIT 2
+        `).all(input.email, input.email, input.phone, input.phone);
+        if (existing.length > 0) {
+          throw new HttpError(
+            409,
+            existing.length > 1
+              ? "More than one guest matches these contact details. Ask an administrator to resolve the duplicate profiles."
+              : "A guest profile already matches these contact details. Match and link that profile instead.",
+          );
+        }
+        const inserted = client.prepare(`
+          INSERT INTO guests (
+            first_name, last_name, email, phone, address, country, notes
+          ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          input.firstName,
+          input.lastName,
+          input.email,
+          input.phone,
+          input.address,
+          input.country,
+          input.notes,
+        );
+        const guestId = Number(inserted.lastInsertRowid);
+        if (propertyId !== undefined) linkGuestToProperty(database, guestId, propertyId);
+        return { guestId };
+      });
+      const record = await findGuest(database, result.guestId);
+      if (!record) throw new Error("The guest profile could not be loaded after saving.");
       response.status(201).json({ guest: record });
+    }),
+  );
+
+  router.post(
+    "/:guestId/link",
+    asyncHandler(async (request, response) => {
+      if (!request.auth) throw new HttpError(401, "Sign in to access this resource.");
+      const propertyId = selectedPropertyId(request, request.auth);
+      if (!propertyId && request.auth.role !== "administrator") {
+        throw new HttpError(400, "Select a property before linking this guest.");
+      }
+      const guestId = parseRecordId(request.params.guestId);
+      const body = requireObject(request.body);
+      if (Object.keys(body).some((field) => field !== "email" && field !== "phone")) {
+        throw new HttpError(400, "Only the exact matched email and phone may be supplied.");
+      }
+      const email = matchText(body.email, "Email");
+      const phone = matchText(body.phone, "Phone number");
+      if (!email && !phone) {
+        throw new HttpError(400, "Supply the exact email address or phone used for matching.");
+      }
+      const match = database.$client.prepare(`
+        SELECT id FROM guests
+        WHERE id = ? AND status = 'active' AND (
+          (? IS NOT NULL AND lower(email) = lower(?)) OR
+          (? IS NOT NULL AND phone = ?)
+        )
+      `).get(guestId, email, email, phone, phone);
+      if (!match) throw new HttpError(404, "Guest profile did not match those contact details.");
+      if (propertyId !== undefined) linkGuestToProperty(database, guestId, propertyId);
+      const record = await findGuest(database, guestId);
+      if (!record) throw new HttpError(404, "Guest not found.");
+      response.json({
+        guest: {
+          id: record.id,
+          firstName: record.firstName,
+          lastName: record.lastName,
+        },
+        linked: propertyId !== undefined,
+      });
     }),
   );
 
@@ -78,6 +225,9 @@ export function createGuestsRouter(database: PmsDatabase): Router {
     "/:guestId",
     asyncHandler(async (request, response) => {
       const guestId = parseRecordId(request.params.guestId);
+      if (!request.auth) throw new HttpError(401, "Sign in to access this resource.");
+      const propertyId = selectedPropertyId(request, request.auth);
+      assertGuestPropertyAccess(database, request.auth, guestId, propertyId);
       const record = await findGuest(database, guestId);
       if (!record) throw new HttpError(404, "Guest not found.");
       response.json({ guest: record });
@@ -88,6 +238,9 @@ export function createGuestsRouter(database: PmsDatabase): Router {
     "/:guestId",
     asyncHandler(async (request, response) => {
       const guestId = parseRecordId(request.params.guestId);
+      if (!request.auth) throw new HttpError(401, "Sign in to access this resource.");
+      const propertyId = selectedPropertyId(request, request.auth);
+      assertGuestPropertyAccess(database, request.auth, guestId, propertyId);
       const existing = await findGuest(database, guestId);
       if (!existing) throw new HttpError(404, "Guest not found.");
       if (existing.status === "archived") {
@@ -108,6 +261,9 @@ export function createGuestsRouter(database: PmsDatabase): Router {
   router.post(
     "/:guestId/archive",
     asyncHandler(async (request, response) => {
+      if (request.auth?.role !== "administrator") {
+        throw new HttpError(403, "Only an administrator can archive a shared guest profile.");
+      }
       const guestId = parseRecordId(request.params.guestId);
       const existing = await findGuest(database, guestId);
       if (!existing) throw new HttpError(404, "Guest not found.");
@@ -129,6 +285,9 @@ export function createGuestsRouter(database: PmsDatabase): Router {
   router.post(
     "/:guestId/restore",
     asyncHandler(async (request, response) => {
+      if (request.auth?.role !== "administrator") {
+        throw new HttpError(403, "Only an administrator can restore a shared guest profile.");
+      }
       const guestId = parseRecordId(request.params.guestId);
       const existing = await findGuest(database, guestId);
       if (!existing) throw new HttpError(404, "Guest not found.");
@@ -175,6 +334,14 @@ function queryText(value: unknown): string {
     throw new HttpError(400, "Search query must be 120 characters or fewer.");
   }
   return search;
+}
+
+function matchText(value: unknown, label: string): string | null {
+  if (value === undefined || value === null || value === "") return null;
+  if (typeof value !== "string") throw new HttpError(400, `${label} must be text.`);
+  const text = value.trim();
+  if (text.length > 254) throw new HttpError(400, `${label} is too long.`);
+  return text || null;
 }
 
 function parseGuestInput(value: unknown) {
